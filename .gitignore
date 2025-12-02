@@ -1,0 +1,50 @@
+# Python build artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtual environments
+.venv/
+.env/
+.env.local
+
+# Dependency/packaging
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# IDE/editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Test caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Logs
+*.log
+
+# Alembic
+alembic/*.pyc
+alembic/__pycache__/
+
+# Data directories generated at runtime
+data/scenes/
+data/reports/
+
+# Reports or uploads
+*.tif
+*.tiff
+*.jp2
+*.csv
+
+# Local config and secrets
+*.env
+.env.*
