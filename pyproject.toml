@@ -9,6 +9,7 @@ dependencies = [
     "fastapi>=0.123.4",
     "geoalchemy2>=0.18.1",
     "numpy>=2.3.5",
+    "opencv-python>=4.11.0.86",
     "psycopg[binary]>=3.3.0",
     "pydantic>=2.12.5",
     "pydantic-settings>=2.12.0",
