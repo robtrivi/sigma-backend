@@ -27,9 +27,11 @@ Crea un archivo `.env` en la raíz del proyecto:
 DATABASE_URL=postgresql+psycopg://sigma:sigma@localhost:5432/sigma
 API_PREFIX=/api/v1
 GREEN_CLASS_IDS=green,tree_canopy,park
+SEGMENTATION_MODEL_PATH=model.h5
 ```
 
 `GREEN_CLASS_IDS` permite ajustar qué clases cuentan como cobertura verde para los reportes.
+`SEGMENTATION_MODEL_PATH` especifica la ruta al modelo de segmentación semántica (por defecto en la raíz del proyecto).
 
 ## Instalación (con uv)
 
@@ -123,7 +125,7 @@ pyproject.toml   # Configuración del proyecto y dependencias gestionadas por uv
   GeoJSON filtrado por región, periodo, clases y bbox para Leaflet.
 
 - `POST /api/v1/segments/scenes/{sceneId}/segment`  
-  Segmentación automática (KMeans) desde un raster.
+  Segmentación semántica automática con modelo Deep Learning desde un TIFF/GeoTIFF.
 
 - `POST /api/v1/aggregations/rebuild`  
   Recalcula estadísticas agregadas de un periodo/región.

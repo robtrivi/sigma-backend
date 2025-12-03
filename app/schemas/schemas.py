@@ -187,10 +187,3 @@ class SegmentsTilesQuery(BaseModel):
     periodo: str
     classId: List[str] | None = None
     bbox: str | None = None
-
-
-class SceneSegmentRequest(BaseModel):
-    method: str = "kmeans"
-    n_classes: int = Field(ge=2, le=15)
-    bands: List[int] | None = None
-    downscale_factor: float | None = Field(default=None, gt=0)

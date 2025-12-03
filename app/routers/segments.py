@@ -1,21 +1,20 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.schemas.schemas import (
-    SceneSegmentRequest,
     SegmentFeatureCollection,
     SegmentUpdateRequest,
     SegmentsImportResponse,
 )
-from app.services.segmentation_raster_service import SegmentationRasterService
+from app.services.dl_segmentation_service import DLSegmentationService
 from app.services.segments_service import SegmentsService
 
 router = APIRouter(prefix="/segments", tags=["segments"])
 segments_service = SegmentsService()
-segmentation_service = SegmentationRasterService()
+dl_segmentation_service = DLSegmentationService()
 
 
 @router.put("/{segment_id}")
@@ -53,12 +52,15 @@ def get_segments_tiles(
 
 
 @router.post("/scenes/{scene_id}/segment", response_model=SegmentsImportResponse)
-def segment_scene(
+async def segment_scene(
     scene_id: str,
-    payload: SceneSegmentRequest,
+    tiff_file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ) -> SegmentsImportResponse:
     try:
-        return segmentation_service.segment_scene(db, scene_id, payload)
+        tiff_bytes = await tiff_file.read()
+        return dl_segmentation_service.segment_scene(db, scene_id, tiff_bytes)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Segmentation failed: {str(exc)}") from exc

@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     reports_dir: Path | None = None
     green_class_ids: List[str] | str = ["green", "tree_canopy", "park"]
     default_epsg: int = 4326
+    segmentation_model_path: Path = Path("model.h5")
 
     @field_validator("green_class_ids", mode="before")
     @classmethod
