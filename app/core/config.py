@@ -15,13 +15,20 @@ class Settings(BaseSettings):
 
     project_name: str = "SIGMA Backend API"
     api_prefix: str = "/api/v1"
-    database_url: str = "postgresql+psycopg://sigma:sigma@localhost:5432/sigma"
+    database_url: str = "postgresql+psycopg://ejemplo:ejemplo@localhost:5432/ejemplo"
     postgis_enabled: bool = True
     data_dir: Path = Path("data")
     scenes_dir: Path | None = None
     reports_dir: Path | None = None
-    green_class_ids: List[str] = ["green", "tree_canopy", "park"]
+    green_class_ids: List[str] | str = ["green", "tree_canopy", "park"]
     default_epsg: int = 4326
+
+    @field_validator("green_class_ids", mode="before")
+    @classmethod
+    def parse_green_class_ids(cls, v: str | List[str]) -> List[str]:
+        if isinstance(v, str):
+            return [item.strip() for item in v.split(",")]
+        return v
 
     @field_validator("scenes_dir", mode="before")
     @classmethod
