@@ -4,7 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
-from app.schemas.schemas import SceneSegmentRequest, SegmentFeatureCollection, SegmentUpdateRequest, SegmentsImportResponse
+from app.schemas.schemas import (
+    SceneSegmentRequest,
+    SegmentFeatureCollection,
+    SegmentUpdateRequest,
+    SegmentsImportResponse,
+)
 from app.services.segmentation_raster_service import SegmentationRasterService
 from app.services.segments_service import SegmentsService
 

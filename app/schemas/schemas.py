@@ -50,7 +50,9 @@ class GeoJSONFeatureCollection(BaseModel):
 
     @field_validator("features")
     @classmethod
-    def ensure_features(cls, v: List[GeoJSONFeature], info: ValidationInfo) -> List[GeoJSONFeature]:
+    def ensure_features(
+        cls, v: List[GeoJSONFeature], info: ValidationInfo
+    ) -> List[GeoJSONFeature]:
         if not v:
             raise ValueError("FeatureCollection must contain at least one feature")
         return v

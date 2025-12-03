@@ -9,14 +9,18 @@ import rasterio
 from affine import Affine
 from rasterio.enums import Resampling
 from rasterio import features
-from shapely.geometry import shape
 from sklearn.cluster import KMeans
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.models import ClassCatalog, Scene, Segment
 from app.schemas.schemas import SceneSegmentRequest, SegmentsImportResponse
-from app.utils.geo import geometry_area_m2, load_multipolygon, reproject_geometry, to_wkb
+from app.utils.geo import (
+    geometry_area_m2,
+    load_multipolygon,
+    reproject_geometry,
+    to_wkb,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +38,9 @@ class SegmentationRasterService:
             "#8BC34A",
         ]
 
-    def segment_scene(self, db: Session, scene_id: str, payload: SceneSegmentRequest) -> SegmentsImportResponse:
+    def segment_scene(
+        self, db: Session, scene_id: str, payload: SceneSegmentRequest
+    ) -> SegmentsImportResponse:
         scene = db.get(Scene, uuid.UUID(scene_id))
         if not scene:
             raise ValueError("Scene not found")
@@ -76,7 +82,9 @@ class SegmentationRasterService:
         db.commit()
         return SegmentsImportResponse(inserted=len(segment_ids), segmentIds=segment_ids)
 
-    def _read_raster(self, path: str, payload: SceneSegmentRequest) -> tuple[np.ndarray, Affine]:
+    def _read_raster(
+        self, path: str, payload: SceneSegmentRequest
+    ) -> tuple[np.ndarray, Affine]:
         with rasterio.open(path) as src:
             bands = payload.bands or list(range(1, min(4, src.count + 1)))
             data = src.read(bands)
@@ -103,7 +111,9 @@ class SegmentationRasterService:
         labels = model.fit_predict(reshaped)
         return labels.reshape(height, width)
 
-    def _vectorize(self, clusters: np.ndarray, transform: Affine) -> List[tuple[dict, int]]:
+    def _vectorize(
+        self, clusters: np.ndarray, transform: Affine
+    ) -> List[tuple[dict, int]]:
         shapes_iter = features.shapes(clusters.astype(np.int16), transform=transform)
         polygons: list[tuple[dict, int]] = []
         for geom, value in shapes_iter:

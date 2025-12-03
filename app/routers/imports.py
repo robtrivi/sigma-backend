@@ -10,7 +10,11 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.db import get_db
 from app.models import Region, Scene
-from app.schemas.schemas import GeoJSONFeatureCollection, SceneUploadResponse, SegmentsImportResponse
+from app.schemas.schemas import (
+    GeoJSONFeatureCollection,
+    SceneUploadResponse,
+    SegmentsImportResponse,
+)
 from app.services.segments_service import SegmentsService
 
 router = APIRouter(prefix="/imports", tags=["imports"])

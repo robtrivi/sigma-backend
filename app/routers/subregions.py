@@ -12,7 +12,9 @@ segments_service = SegmentsService()
 
 
 @router.get("/{subregion_id}/history", response_model=SubregionHistoryResponse)
-def subregion_history(subregion_id: str, db: Session = Depends(get_db)) -> SubregionHistoryResponse:
+def subregion_history(
+    subregion_id: str, db: Session = Depends(get_db)
+) -> SubregionHistoryResponse:
     try:
         return segments_service.subregion_history(db, subregion_id)
     except ValueError as exc:

@@ -34,7 +34,10 @@ def rebuild_aggregation(
         )
         for item in summary.distribution_json
     ]
-    trend = [TrendItem(periodo=item["periodo"], value=item["value"]) for item in summary.trend_json]
+    trend = [
+        TrendItem(periodo=item["periodo"], value=item["value"])
+        for item in summary.trend_json
+    ]
     return AggregationSummaryRead(
         regionId=summary.region_id,
         periodo=summary.periodo,

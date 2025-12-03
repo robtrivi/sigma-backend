@@ -23,7 +23,9 @@ class AggregationsService:
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or get_settings()
 
-    def rebuild(self, db: Session, request: AggregationRebuildRequest) -> AggregationSummary:
+    def rebuild(
+        self, db: Session, request: AggregationRebuildRequest
+    ) -> AggregationSummary:
         summary = self.snapshot_period(db, request.regionId, request.periodo)
         existing = (
             db.execute(
@@ -69,7 +71,9 @@ class AggregationsService:
         green_coverage: float
         summary = self._get_summary(db, region_id, periodo)
         if segment_ids:
-            distribution_data, green_coverage = self._aggregate_filtered(db, region_id, periodo, segment_ids)
+            distribution_data, green_coverage = self._aggregate_filtered(
+                db, region_id, periodo, segment_ids
+            )
             trend_data = summary.trend_json if summary else []
         else:
             if not summary:
@@ -95,7 +99,10 @@ class AggregationsService:
             )
             for item in distribution_data
         ]
-        trend = [TrendItem(periodo=item["periodo"], value=item["value"]) for item in trend_data]
+        trend = [
+            TrendItem(periodo=item["periodo"], value=item["value"])
+            for item in trend_data
+        ]
         messages: list[str] = []
         if green_coverage < 20:
             messages.append("Cobertura verde por debajo del umbral recomendado.")
@@ -119,18 +126,15 @@ class AggregationsService:
         segment_ids: List[str],
     ) -> tuple[List[dict], float]:
         parsed_ids = [uuid.UUID(seg_id) for seg_id in segment_ids]
-        rows = (
-            db.execute(
-                select(Segment.class_id, Segment.class_name, func.sum(Segment.area_m2))
-                .where(
-                    Segment.region_id == region_id,
-                    Segment.periodo == periodo,
-                    Segment.id.in_(parsed_ids),
-                )
-                .group_by(Segment.class_id, Segment.class_name)
+        rows = db.execute(
+            select(Segment.class_id, Segment.class_name, func.sum(Segment.area_m2))
+            .where(
+                Segment.region_id == region_id,
+                Segment.periodo == periodo,
+                Segment.id.in_(parsed_ids),
             )
-            .all()
-        )
+            .group_by(Segment.class_id, Segment.class_name)
+        ).all()
         total_area = sum(row[2] or 0 for row in rows)
         if total_area == 0:
             return ([], 0.0)
@@ -151,7 +155,9 @@ class AggregationsService:
         coverage = (green_area / total_area) * 100 if total_area else 0.0
         return distribution, coverage
 
-    def _get_summary(self, db: Session, region_id: str, periodo: str) -> AggregationSummary | None:
+    def _get_summary(
+        self, db: Session, region_id: str, periodo: str
+    ) -> AggregationSummary | None:
         return (
             db.execute(
                 select(AggregationSummary).where(
@@ -163,22 +169,21 @@ class AggregationsService:
             .first()
         )
 
-    def snapshot_period(self, db: Session, region_id: str, periodo: str) -> Dict[str, Any]:
-        rows = (
-            db.execute(
-                select(
-                    Segment.class_id,
-                    Segment.class_name,
-                    func.sum(Segment.area_m2).label("area"),
-                )
-                .where(
-                    Segment.region_id == region_id,
-                    Segment.periodo == periodo,
-                )
-                .group_by(Segment.class_id, Segment.class_name)
+    def snapshot_period(
+        self, db: Session, region_id: str, periodo: str
+    ) -> Dict[str, Any]:
+        rows = db.execute(
+            select(
+                Segment.class_id,
+                Segment.class_name,
+                func.sum(Segment.area_m2).label("area"),
             )
-            .all()
-        )
+            .where(
+                Segment.region_id == region_id,
+                Segment.periodo == periodo,
+            )
+            .group_by(Segment.class_id, Segment.class_name)
+        ).all()
         total_area = sum(row.area or 0.0 for row in rows)
         distribution = []
         green_area = 0.0
@@ -205,7 +210,10 @@ class AggregationsService:
         }
 
     def _build_trend(self, db: Session, region_id: str) -> List[dict]:
-        green_case = case((Segment.class_id.in_(self.settings.green_class_ids), Segment.area_m2), else_=0.0)
+        green_case = case(
+            (Segment.class_id.in_(self.settings.green_class_ids), Segment.area_m2),
+            else_=0.0,
+        )
         stmt: Select = (
             select(
                 Segment.periodo,

@@ -23,7 +23,9 @@ class ReportsService:
         self.settings = settings or get_settings()
         self.aggregations = AggregationsService(self.settings)
 
-    def generate_report(self, db: Session, request: ReportDownloadRequest) -> ReportJobResponse:
+    def generate_report(
+        self, db: Session, request: ReportDownloadRequest
+    ) -> ReportJobResponse:
         segments = self._fetch_segments(db, request)
         if not segments:
             raise ValueError("No hay segmentos para los filtros seleccionados")
@@ -44,7 +46,9 @@ class ReportsService:
         db.commit()
         db.refresh(record)
         download_url = f"{self.settings.api_prefix}/reports/{record.id}/download"
-        return ReportJobResponse(reportId=str(record.id), downloadUrl=download_url, expiresAt=expires_at)
+        return ReportJobResponse(
+            reportId=str(record.id), downloadUrl=download_url, expiresAt=expires_at
+        )
 
     def get_report_file(self, db: Session, report_id: str) -> Path:
         try:
@@ -61,7 +65,9 @@ class ReportsService:
             raise ValueError("El enlace del reporte expiró")
         return path
 
-    def _fetch_segments(self, db: Session, request: ReportDownloadRequest) -> List[Segment]:
+    def _fetch_segments(
+        self, db: Session, request: ReportDownloadRequest
+    ) -> List[Segment]:
         stmt: Select[tuple[Segment]] = select(Segment).where(
             Segment.region_id == request.regionId,
             Segment.periodo.in_(request.periodos),
@@ -73,14 +79,18 @@ class ReportsService:
             stmt = stmt.where(Segment.id.in_(parsed_ids))
         return db.execute(stmt).scalars().all()
 
-    def _collect_summaries(self, db: Session, request: ReportDownloadRequest) -> dict[str, dict]:
+    def _collect_summaries(
+        self, db: Session, request: ReportDownloadRequest
+    ) -> dict[str, dict]:
         summaries: dict[str, dict] = {}
         for periodo in request.periodos:
             summary = self.aggregations.snapshot_period(db, request.regionId, periodo)
             summaries[periodo] = summary
         return summaries
 
-    def _write_csv(self, path: Path, segments: Iterable[Segment], summaries: dict[str, dict]) -> None:
+    def _write_csv(
+        self, path: Path, segments: Iterable[Segment], summaries: dict[str, dict]
+    ) -> None:
         headers = [
             "periodo",
             "segment_id",
@@ -100,7 +110,13 @@ class ReportsService:
             writer.writerow(["Resumen por periodo"])
             writer.writerow(["Periodo", "Cobertura verde (%)", "Área total (m2)"])
             for periodo, summary in summaries.items():
-                writer.writerow([periodo, f"{summary['green_coverage']:.2f}", f"{summary['total_area']:.2f}"])
+                writer.writerow(
+                    [
+                        periodo,
+                        f"{summary['green_coverage']:.2f}",
+                        f"{summary['total_area']:.2f}",
+                    ]
+                )
             writer.writerow([])
             writer.writerow(headers)
             for segment in segments:

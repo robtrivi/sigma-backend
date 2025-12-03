@@ -32,7 +32,9 @@ class SegmentsService:
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or get_settings()
 
-    def import_segments(self, db: Session, payload: GeoJSONFeatureCollection) -> SegmentsImportResponse:
+    def import_segments(
+        self, db: Session, payload: GeoJSONFeatureCollection
+    ) -> SegmentsImportResponse:
         segment_ids: list[str] = []
         for feature in payload.features:
             geom = self._prepare_geometry(feature.geometry.model_dump())
@@ -56,7 +58,9 @@ class SegmentsService:
         db.commit()
         return SegmentsImportResponse(inserted=len(segment_ids), segmentIds=segment_ids)
 
-    def update_segment(self, db: Session, segment_id: str, payload: SegmentUpdateRequest) -> Segment:
+    def update_segment(
+        self, db: Session, segment_id: str, payload: SegmentUpdateRequest
+    ) -> Segment:
         segment = db.get(Segment, uuid.UUID(segment_id))
         if not segment:
             raise ValueError("Segment not found")
@@ -90,7 +94,9 @@ class SegmentsService:
             stmt = stmt.where(Segment.class_id.in_(class_ids))
         if bbox:
             min_lon, min_lat, max_lon, max_lat = parse_bbox(bbox)
-            envelope = func.ST_MakeEnvelope(min_lon, min_lat, max_lon, max_lat, self.settings.default_epsg)
+            envelope = func.ST_MakeEnvelope(
+                min_lon, min_lat, max_lon, max_lat, self.settings.default_epsg
+            )
             stmt = stmt.where(func.ST_Intersects(Segment.geometry, envelope))
         segments = db.execute(stmt).scalars().all()
         features = [
@@ -111,7 +117,13 @@ class SegmentsService:
         ]
         return SegmentFeatureCollection(type="FeatureCollection", features=features)
 
-    def region_periods(self, db: Session, region_id: str, from_period: str | None, to_period: str | None) -> List[RegionPeriodItem]:
+    def region_periods(
+        self,
+        db: Session,
+        region_id: str,
+        from_period: str | None,
+        to_period: str | None,
+    ) -> List[RegionPeriodItem]:
         stmt = (
             select(
                 Segment.periodo,
@@ -137,11 +149,15 @@ class SegmentsService:
             for row in rows
         ]
 
-    def subregion_history(self, db: Session, subregion_id: str) -> SubregionHistoryResponse:
+    def subregion_history(
+        self, db: Session, subregion_id: str
+    ) -> SubregionHistoryResponse:
         subregion = db.get(Subregion, uuid.UUID(subregion_id))
         if not subregion:
             raise ValueError("Subregion not found")
-        subgeom = bindparam("subgeom", subregion.geometry, type_=Geometry("MULTIPOLYGON", 4326))
+        subgeom = bindparam(
+            "subgeom", subregion.geometry, type_=Geometry("MULTIPOLYGON", 4326)
+        )
         area_expr = func.ST_Area(
             func.ST_Transform(
                 func.ST_Intersection(Segment.geometry, func.ST_GeomFromEWKB(subgeom)),
@@ -170,7 +186,9 @@ class SegmentsService:
         prev_total = None
         for periodo in ordered_periods:
             classes = history_map[periodo]
-            dominant_class_id, (dominant_class_name, area) = max(classes.items(), key=lambda item: item[1][1])
+            dominant_class_id, (dominant_class_name, area) = max(
+                classes.items(), key=lambda item: item[1][1]
+            )
             total_area = sum(area for _, area in classes.values())
             delta = None
             if prev_total is not None and prev_total > 0:
@@ -185,7 +203,11 @@ class SegmentsService:
                     deltaVsPrev=delta,
                 )
             )
-        return SubregionHistoryResponse(subregionId=str(subregion.id), regionId=subregion.region_id, history=history_items)
+        return SubregionHistoryResponse(
+            subregionId=str(subregion.id),
+            regionId=subregion.region_id,
+            history=history_items,
+        )
 
     def _prepare_geometry(self, geometry: dict) -> MultiPolygon:
         return load_multipolygon(geometry)
@@ -206,7 +228,9 @@ class SegmentsService:
             raise ValueError(f"Class {class_id} not found in catalog")
         return catalog
 
-    def _validate_against_region(self, db: Session, region_id: str, geometry: MultiPolygon) -> None:
+    def _validate_against_region(
+        self, db: Session, region_id: str, geometry: MultiPolygon
+    ) -> None:
         region = db.get(Region, region_id)
         if not region:
             raise ValueError(f"Region {region_id} not found")
