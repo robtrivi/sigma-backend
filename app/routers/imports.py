@@ -15,11 +15,13 @@ from app.schemas.schemas import (
     SceneUploadResponse,
     SegmentsImportResponse,
 )
+from app.services.dl_segmentation_service import DLSegmentationService
 from app.services.segments_service import SegmentsService
 
 router = APIRouter(prefix="/imports", tags=["imports"])
 settings = get_settings()
 segments_service = SegmentsService(settings)
+dl_segmentation_service = DLSegmentationService(settings)
 
 
 @router.post("/scenes", response_model=SceneUploadResponse)
@@ -53,6 +55,16 @@ async def upload_scene(
     db.add(scene)
     db.commit()
     db.refresh(scene)
+    
+    try:
+        sceneFile.file.seek(0)
+        tiff_bytes = await sceneFile.read()
+        dl_segmentation_service.segment_scene(db, str(scene.id), tiff_bytes)
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Automatic segmentation failed for scene {scene.id}: {e}")
+    
     return SceneUploadResponse(
         sceneId=str(scene.id),
         regionId=scene.region_id,
