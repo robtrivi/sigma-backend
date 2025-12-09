@@ -82,14 +82,15 @@ class SegmentsService:
         self,
         db: Session,
         region_id: str,
-        periodo: str,
+        periodo: str | None,
         class_ids: List[str] | None,
         bbox: str | None,
     ) -> SegmentFeatureCollection:
         stmt: Select[tuple[Segment]] = select(Segment).where(
             Segment.region_id == region_id,
-            Segment.periodo == periodo,
         )
+        if periodo:
+            stmt = stmt.where(Segment.periodo == periodo)
         if class_ids:
             stmt = stmt.where(Segment.class_id.in_(class_ids))
         if bbox:

@@ -79,6 +79,33 @@ CLASS_COLORS = {
     23: "#FF0000",  # conflicting
 }
 
+CLASS_NAMES = {
+    0: "Sin etiqueta",
+    1: "Área pavimentada",
+    2: "Tierra",
+    3: "Césped",
+    4: "Grava",
+    5: "Agua",
+    6: "Rocas",
+    7: "Piscina",
+    8: "Vegetación",
+    9: "Techo",
+    10: "Pared",
+    11: "Ventana",
+    12: "Puerta",
+    13: "Cerca",
+    14: "Poste de cerca",
+    15: "Persona",
+    16: "Perro",
+    17: "Automóvil",
+    18: "Bicicleta",
+    19: "Árbol",
+    20: "Árbol sin hojas",
+    21: "Marcador AR",
+    22: "Obstáculo",
+    23: "Conflicto",
+}
+
 
 def get_model(settings: Settings):
     global _model
@@ -264,12 +291,13 @@ class DLSegmentationService:
             catalog = db.get(ClassCatalog, catalog_id)
             if not catalog:
                 color = CLASS_COLORS.get(class_id, "#9E9E9E")
+                class_name = CLASS_NAMES.get(class_id, class_label.replace("-", " ").replace("_", " ").title())
                 catalog = ClassCatalog(
                     id=catalog_id,
-                    name=class_label.replace("_", " ").title(),
+                    name=class_name,
                     color_hex=color,
                     icono_primeng="pi pi-map-marker",
-                    description=f"Clase {class_label} generada por segmentación DL",
+                    description=f"Clase de segmentación: {class_name}",
                 )
                 db.add(catalog)
                 db.flush()
