@@ -27,11 +27,11 @@ Crea un archivo `.env` en la raíz del proyecto:
 DATABASE_URL=postgresql+psycopg://sigma:sigma@localhost:5432/sigma
 API_PREFIX=/api/v1
 GREEN_CLASS_IDS=green,tree_canopy,park
-SEGMENTATION_MODEL_PATH=model.h5
+SEGMENTATION_MODEL_PATH=model.keras
 ```
 
 `GREEN_CLASS_IDS` permite ajustar qué clases cuentan como cobertura verde para los reportes.
-`SEGMENTATION_MODEL_PATH` especifica la ruta al modelo de segmentación semántica (por defecto en la raíz del proyecto).
+`SEGMENTATION_MODEL_PATH` especifica la ruta al modelo de segmentación semántica (por defecto `model.keras` en la raíz del proyecto).
 
 ## Instalación (con uv)
 

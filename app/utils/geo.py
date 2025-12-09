@@ -5,6 +5,7 @@ from typing import Iterable, Tuple
 
 from geoalchemy2.shape import from_shape, to_shape
 from pyproj import Transformer
+from shapely import wkb
 from shapely.geometry import MultiPolygon, Polygon, shape
 from shapely.ops import transform as shapely_transform
 from shapely.validation import explain_validity
@@ -28,8 +29,12 @@ def to_wkb(geometry: MultiPolygon, srid: int = 4326) -> bytes:
     return from_shape(geometry, srid=srid)
 
 
-def to_geojson(db_geometry: bytes) -> dict:
-    geom = to_shape(db_geometry)
+def to_geojson(db_geometry) -> dict:
+    if hasattr(db_geometry, 'data'):
+        geom = to_shape(db_geometry)
+    else:
+        geom = wkb.loads(bytes(db_geometry))
+    
     return geom.__geo_interface__
 
 
