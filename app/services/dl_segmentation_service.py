@@ -26,19 +26,57 @@ logger = logging.getLogger(__name__)
 _model = None
 
 CLASS_MAPPING = {
-    0: "obstaculos",
-    1: "agua",
-    2: "superficies_blandas",
-    3: "objetos_en_movimiento",
-    4: "zonas_aterrizables",
+    0: "unlabeled",
+    1: "paved-area",
+    2: "dirt",
+    3: "grass",
+    4: "gravel",
+    5: "water",
+    6: "rocks",
+    7: "pool",
+    8: "vegetation",
+    9: "roof",
+    10: "wall",
+    11: "window",
+    12: "door",
+    13: "fence",
+    14: "fence-pole",
+    15: "person",
+    16: "dog",
+    17: "car",
+    18: "bicycle",
+    19: "tree",
+    20: "bald-tree",
+    21: "ar-marker",
+    22: "obstacle",
+    23: "conflicting",
 }
 
 CLASS_COLORS = {
-    0: "#FF5722",
-    1: "#2196F3",
-    2: "#4CAF50",
-    3: "#FFC107",
-    4: "#8BC34A",
+    0: "#000000",   # unlabeled
+    1: "#804080",   # paved-area
+    2: "#824C00",   # dirt
+    3: "#006600",   # grass
+    4: "#706757",   # gravel
+    5: "#1C2AA8",   # water
+    6: "#30291E",   # rocks
+    7: "#003259",   # pool
+    8: "#6B8E23",   # vegetation
+    9: "#464646",   # roof
+    10: "#66669C",  # wall
+    11: "#FEE40C",  # window
+    12: "#FE940C",  # door
+    13: "#BE9999",  # fence
+    14: "#999999",  # fence-pole
+    15: "#FF1660",  # person
+    16: "#663300",  # dog
+    17: "#098F96",  # car
+    18: "#770B20",  # bicycle
+    19: "#333300",  # tree
+    20: "#BEFABE",  # bald-tree
+    21: "#709692",  # ar-marker
+    22: "#028773",  # obstacle
+    23: "#FF0000",  # conflicting
 }
 
 
