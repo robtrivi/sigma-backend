@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT_DIR))
 
 from app.core.db import Base  # noqa: E402
 from app.core.config import get_settings  # noqa: E402
+from app.models import models  # noqa: E402, F401
 
 config = context.config
 
