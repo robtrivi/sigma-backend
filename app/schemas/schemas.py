@@ -11,6 +11,11 @@ class RegionBase(BaseModel):
     name: str
 
 
+class RegionCreate(BaseModel):
+    id: str
+    name: str
+
+
 class RegionRead(RegionBase):
     geometry: dict | None = None
 
