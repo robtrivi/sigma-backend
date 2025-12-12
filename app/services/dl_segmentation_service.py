@@ -157,37 +157,47 @@ class DLSegmentationService:
             logger.error(f"TIFF validation failed for scene {scene_id}: {e}")
             raise ValueError(f"Invalid TIFF file: {e}") from e
 
-        model = get_model(self.settings)
-        model_height, model_width = get_model_input_shape(model)
-        num_classes = get_model_num_classes(model)
+        try:
+            model = get_model(self.settings)
+            model_height, model_width = get_model_input_shape(model)
+            num_classes = get_model_num_classes(model)
 
-        image_data, transform, crs, original_shape = self._read_tiff(tiff_bytes)
-        preprocessed = self._preprocess_image(image_data, model_height, model_width)
-        predictions = model.predict(preprocessed, verbose=0)
-        mask_ids_model = np.argmax(predictions[0], axis=-1)
-        
-        # ========== NUEVO: Calcular cobertura por píxeles ==========
-        coverage_data = self._calculate_pixel_coverage(mask_ids_model, num_classes)
-        total_pixels = mask_ids_model.size
-        
-        # Guardar cobertura en BD
-        self._save_coverage_to_db(db, scene, coverage_data, total_pixels)
-        logger.info(f"Pixel coverage analysis saved for scene {scene_id}")
-        # =========================================================
-        
-        mask_ids_original = self._resize_mask(
-            mask_ids_model, original_shape[0], original_shape[1]
-        )
-        stats = self._calculate_stats(mask_ids_original, num_classes)
-        features_geo = self._vectorize_mask(mask_ids_original, transform, crs)
-        segment_ids = self._persist_segments(
-            db, scene, features_geo, stats, scene.epsg
-        )
-        db.commit()
+            image_data, transform, crs, original_shape = self._read_tiff(tiff_bytes)
+            preprocessed = self._preprocess_image(image_data, model_height, model_width)
+            predictions = model.predict(preprocessed, verbose=0)
+            mask_ids_model = np.argmax(predictions[0], axis=-1)
+            
+            # ========== NUEVO: Calcular cobertura por píxeles ==========
+            coverage_data = self._calculate_pixel_coverage(mask_ids_model, num_classes)
+            total_pixels = mask_ids_model.size
+            
+            # Guardar cobertura en BD
+            self._save_coverage_to_db(db, scene, coverage_data, total_pixels)
+            logger.info(f"Pixel coverage analysis saved for scene {scene_id}")
+            # =========================================================
+            
+            mask_ids_original = self._resize_mask(
+                mask_ids_model, original_shape[0], original_shape[1]
+            )
+            
+            # ========== NUEVO: Guardar máscara RGB georeferenciada ==========
+            self._save_mask_rgb(db, scene, mask_ids_original, image_data, transform, crs)
+            logger.info(f"RGB mask saved for scene {scene_id}")
+            # ==============================================================
+            
+            stats = self._calculate_stats(mask_ids_original, num_classes)
+            features_geo = self._vectorize_mask(mask_ids_original, transform, crs)
+            segment_ids = self._persist_segments(
+                db, scene, features_geo, stats, scene.epsg
+            )
+            db.commit()
 
-        logger.info(
-            f"Segmentation completed for scene {scene_id}. Created {len(segment_ids)} segments."
-        )
+            logger.info(
+                f"Segmentation completed for scene {scene_id}. Created {len(segment_ids)} segments."
+            )
+        except Exception as seg_error:
+            logger.error(f"Error during segmentation of scene {scene_id}: {seg_error}", exc_info=True)
+            raise
         return SegmentsImportResponse(inserted=len(segment_ids), segmentIds=segment_ids)
 
     def _read_tiff(
@@ -198,8 +208,33 @@ class DLSegmentationService:
                 data = src.read()
                 transform = src.transform
                 crs_epsg = None
-                if src.crs is not None:
-                    crs_epsg = src.crs.to_epsg()
+                
+                try:
+                    if src.crs is not None:
+                        crs_epsg = src.crs.to_epsg()
+                except Exception as e:
+                    logger.warning(f"[_read_tiff] Error reading CRS: {e}. Will attempt to infer from bounds.")
+                
+                # Si no hay CRS pero tenemos bounds, inferir del rango de coordenadas
+                if crs_epsg is None:
+                    try:
+                        bbox = src.bounds
+                        # Ecuador generalmente está en UTM Zonas 17-18 Sur
+                        # Zona 17S: X 400000-800000, Y 9600000-10000000
+                        # Zona 18S: X 100000-500000, Y 9600000-10000000
+                        if bbox.left > 400000 and bbox.left < 800000:
+                            crs_epsg = 32717  # UTM Zone 17S
+                            logger.info(f"[_read_tiff] Inferido CRS: EPSG:32717 (UTM 17S)")
+                        elif bbox.left > 100000 and bbox.left < 500000:
+                            crs_epsg = 32718  # UTM Zone 18S
+                            logger.info(f"[_read_tiff] Inferido CRS: EPSG:32718 (UTM 18S)")
+                        else:
+                            crs_epsg = 32717  # Default para Ecuador
+                            logger.info(f"[_read_tiff] CRS no detectado, usando default EPSG:32717")
+                    except Exception as e:
+                        logger.warning(f"[_read_tiff] Error inferring CRS from bounds: {e}. Using default EPSG:32717")
+                        crs_epsg = 32717
+                
                 original_shape = (src.height, src.width)
 
                 if data.shape[0] >= 3:
@@ -212,6 +247,7 @@ class DLSegmentationService:
                         f"Unsupported number of bands: {data.shape[0]}. Expected at least 3 or 1."
                     )
 
+        logger.info(f"[_read_tiff] Imagen: {original_shape}, CRS: EPSG:{crs_epsg}")
         return image_rgb, transform, crs_epsg, original_shape
 
     def _preprocess_image(
@@ -451,3 +487,121 @@ class DLSegmentationService:
         db.add(summary)
         
         return segmentation_result
+    def _save_mask_rgb(
+        self,
+        db: Session,
+        scene: Scene,
+        mask_ids: np.ndarray,
+        original_image: np.ndarray,
+        transform: Affine,
+        crs: int | None,
+    ) -> None:
+        """
+        Convierte la máscara de índices a RGB y la guarda como GeoTIFF.
+        
+        Args:
+            db: Sesión de base de datos
+            scene: Escena a la que pertenece la máscara
+            mask_ids: Máscara con índices de clase (H, W)
+            original_image: Imagen original para referencia
+            transform: Transformación Affine para georeferenciación
+            crs: EPSG code del CRS (puede ser None)
+        """
+        import rasterio
+        from rasterio.transform import Affine
+        
+        # Si no hay CRS, asumir EPSG:32717 (Ecuador default)
+        if crs is None:
+            crs = 32717
+            logger.warning(f"[_save_mask_rgb] CRS None, usando default EPSG:32717")
+        
+        # Obtener colores del backend (mismos que en notebook)
+        class_colors_rgb = {
+            0: (0, 0, 0),      # unlabeled
+            1: (128, 64, 128),  # paved-area
+            2: (130, 76, 0),    # dirt
+            3: (0, 102, 0),     # grass
+            4: (112, 103, 87),  # gravel
+            5: (28, 42, 168),   # water
+            6: (48, 41, 30),    # rocks
+            7: (0, 50, 89),     # pool
+            8: (107, 142, 35),  # vegetation
+            9: (70, 70, 70),    # roof
+            10: (102, 102, 156), # wall
+            11: (254, 228, 12), # window
+            12: (254, 148, 12), # door
+            13: (190, 153, 153), # fence
+            14: (153, 153, 153), # fence-pole
+            15: (255, 22, 96),  # person
+            16: (102, 51, 0),   # dog
+            17: (9, 143, 150),  # car
+            18: (119, 11, 32),  # bicycle
+            19: (51, 51, 0),    # tree
+            20: (190, 250, 190), # bald-tree
+            21: (112, 150, 146), # ar-marker
+            22: (2, 135, 115),  # obstacle
+            23: (255, 0, 0),    # conflicting
+        }
+        
+        # Crear imagen RGB
+        mask_rgb = np.zeros((*mask_ids.shape, 3), dtype=np.uint8)
+        
+        for class_id, color_rgb in class_colors_rgb.items():
+            mask_rgb[mask_ids == class_id] = color_rgb
+        
+        # Crear directorio de escena si no existe
+        scene_dir = Path(self.settings.data_dir) / "scenes" / str(scene.id)
+        scene_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Guardar como GeoTIFF
+        mask_path = scene_dir / "mask_predicted_rgb.tif"
+        
+        logger.info(f"[_save_mask_rgb] Guardando máscara RGB en {mask_path} con CRS EPSG:{crs}")
+        
+        try:
+            # Intentar crear CRS con el código EPSG
+            from rasterio.crs import CRS as Rasterio_CRS
+            crs_obj = Rasterio_CRS.from_epsg(crs)
+        except Exception as e:
+            logger.warning(f"[_save_mask_rgb] Error al crear CRS EPSG:{crs}: {e}. Usando string directo.")
+            crs_obj = f'EPSG:{crs}'
+        
+        try:
+            with rasterio.open(
+                str(mask_path),
+                'w',
+                driver='GTiff',
+                height=mask_rgb.shape[0],
+                width=mask_rgb.shape[1],
+                count=3,
+                dtype=mask_rgb.dtype,
+                transform=transform,
+                crs=crs_obj,
+            ) as dst:
+                dst.write(mask_rgb[:, :, 0], 1)  # R
+                dst.write(mask_rgb[:, :, 1], 2)  # G
+                dst.write(mask_rgb[:, :, 2], 3)  # B
+            
+            logger.info(f"[_save_mask_rgb] Máscara RGB guardada exitosamente")
+        except Exception as e:
+            # Si falla incluso sin CRS, guardar sin información de proyección
+            logger.warning(f"[_save_mask_rgb] Error al escribir con CRS, intentando sin CRS: {e}")
+            try:
+                with rasterio.open(
+                    str(mask_path),
+                    'w',
+                    driver='GTiff',
+                    height=mask_rgb.shape[0],
+                    width=mask_rgb.shape[1],
+                    count=3,
+                    dtype=mask_rgb.dtype,
+                    transform=transform,
+                ) as dst:
+                    dst.write(mask_rgb[:, :, 0], 1)  # R
+                    dst.write(mask_rgb[:, :, 1], 2)  # G
+                    dst.write(mask_rgb[:, :, 2], 3)  # B
+                
+                logger.info(f"[_save_mask_rgb] Máscara RGB guardada sin información de proyección")
+            except Exception as e2:
+                logger.error(f"[_save_mask_rgb] Error crítico al guardar máscara: {e2}")
+                raise
