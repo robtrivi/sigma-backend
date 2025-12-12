@@ -27,18 +27,43 @@ dl_segmentation_service = DLSegmentationService(settings)
 @router.post("/scenes", response_model=SceneUploadResponse)
 async def upload_scene(
     sceneFile: UploadFile = File(...),
-    captureDate: date = Form(...),
+    captureDate: str = Form(...),
     epsg: int = Form(...),
     sensor: str = Form(...),
     regionId: str = Form(...),
     db: Session = Depends(get_db),
 ) -> SceneUploadResponse:
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    # Validate inputs
+    if not regionId or not regionId.strip():
+        raise HTTPException(status_code=400, detail="regionId is required")
+    if not captureDate or not captureDate.strip():
+        raise HTTPException(status_code=400, detail="captureDate is required")
+    if not sensor or not sensor.strip():
+        raise HTTPException(status_code=400, detail="sensor is required")
+    
+    logger.info(f"Upload scene request: regionId={regionId}, captureDate={captureDate}, epsg={epsg}, sensor={sensor}")
+    
+    try:
+        # Convert captureDate string to date object
+        from datetime import datetime
+        capture_date_obj = datetime.strptime(captureDate, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid date format. Expected YYYY-MM-DD, got {captureDate}"
+        )
+    
     region = db.get(Region, regionId)
     if not region:
-        raise HTTPException(status_code=404, detail="Region not found")
+        logger.error(f"Region not found: {regionId}")
+        raise HTTPException(status_code=404, detail=f"Region not found: {regionId}")
+    
     scene = Scene(
         region_id=regionId,
-        capture_date=captureDate,
+        capture_date=capture_date_obj,
         epsg=epsg,
         sensor=sensor,
         raster_path="",

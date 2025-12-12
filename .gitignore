@@ -48,3 +48,5 @@ data/reports/
 # Local config and secrets
 *.env
 .env.*
+*.keras
+

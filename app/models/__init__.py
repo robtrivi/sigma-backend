@@ -7,6 +7,8 @@ from app.models.models import (
 	ReportRequest,
 	Scene,
 	Segment,
+	SegmentationResult,
+	SegmentationSummary,
 	Subregion,
 )
 
@@ -17,5 +19,7 @@ __all__ = [
 	"ReportRequest",
 	"Scene",
 	"Segment",
+	"SegmentationResult",
+	"SegmentationSummary",
 	"Subregion",
 ]

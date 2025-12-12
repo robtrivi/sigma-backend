@@ -2,12 +2,16 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy.orm import Session
+import uuid
 
 from app.core.db import get_db
+from app.models import SegmentationResult, SegmentationSummary
 from app.schemas.schemas import (
     SegmentFeatureCollection,
     SegmentUpdateRequest,
     SegmentsImportResponse,
+    SegmentationCoverageRead,
+    SegmentationCoverageSummary,
 )
 from app.services.dl_segmentation_service import DLSegmentationService
 from app.services.segments_service import SegmentsService
@@ -64,3 +68,90 @@ async def segment_scene(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Segmentation failed: {str(exc)}") from exc
+
+
+@router.get("/coverage/{scene_id}", response_model=SegmentationCoverageRead)
+def get_coverage(
+    scene_id: str,
+    db: Session = Depends(get_db),
+):
+    """
+    Obtiene cobertura por píxeles previamente calculada y guardada en BD.
+    
+    Args:
+        scene_id: UUID de la escena
+        
+    Returns:
+        SegmentationCoverageRead con detalles de cobertura por clase
+    """
+    try:
+        scene_uuid = uuid.UUID(scene_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid scene_id format")
+    
+    result = db.query(SegmentationResult).filter(
+        SegmentationResult.scene_id == scene_uuid
+    ).first()
+    
+    if not result:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No segmentation results found for scene {scene_id}"
+        )
+    
+    return SegmentationCoverageRead(
+        scene_id=str(result.scene_id),
+        total_pixels=result.total_pixels,
+        image_resolution=result.image_resolution,
+        coverage_by_class=result.coverage_by_class,
+        created_at=result.created_at,
+    )
+
+
+@router.get("/coverage-summary/{scene_id}", response_model=SegmentationCoverageSummary)
+def get_coverage_summary(
+    scene_id: str,
+    db: Session = Depends(get_db),
+):
+    """
+    Obtiene resumen rápido de cobertura dominante (sin parsear JSON completo).
+    Ideal para dashboards con muchas escenas.
+    
+    Args:
+        scene_id: UUID de la escena
+        
+    Returns:
+        SegmentationCoverageSummary con clases dominantes
+    """
+    try:
+        scene_uuid = uuid.UUID(scene_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid scene_id format")
+    
+    result = db.query(SegmentationResult).filter(
+        SegmentationResult.scene_id == scene_uuid
+    ).first()
+    
+    if not result:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No segmentation results found for scene {scene_id}"
+        )
+    
+    summary = db.query(SegmentationSummary).filter(
+        SegmentationSummary.segmentation_result_id == result.id
+    ).first()
+    
+    if not summary:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No coverage summary found for scene {scene_id}"
+        )
+    
+    return SegmentationCoverageSummary(
+        scene_id=str(result.scene_id),
+        dominant_class=summary.dominant_class_name,
+        dominant_percentage=summary.dominant_class_percentage,
+        secondary_class=summary.second_class_name,
+        secondary_percentage=summary.second_class_percentage,
+    )

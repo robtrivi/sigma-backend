@@ -105,6 +105,7 @@ class SegmentsService:
                 geometry=to_geojson(segment.geometry),
                 properties=SegmentProperties(
                     segmentId=str(segment.id),
+                    sceneId=str(segment.scene_id),
                     regionId=segment.region_id,
                     classId=segment.class_id,
                     className=segment.class_name,

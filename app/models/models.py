@@ -5,7 +5,7 @@ from datetime import date, datetime
 
 from geoalchemy2 import Geometry, WKBElement
 from sqlalchemy import JSON, Column, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -40,6 +40,7 @@ class Scene(Base, TimestampMixin):
 
     region: Mapped[Region] = relationship(back_populates="scenes")
     segments: Mapped[list["Segment"]] = relationship(back_populates="scene")
+    segmentation_results: Mapped[list["SegmentationResult"]] = relationship(back_populates="scene", cascade="all,delete-orphan")
 
 
 class ClassCatalog(Base):
@@ -117,3 +118,51 @@ class ReportRequest(Base, TimestampMixin):
     segment_ids: Mapped[list[str]] = mapped_column(JSON, nullable=True)
     file_path: Mapped[str] = mapped_column(String(512), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class SegmentationResult(Base, TimestampMixin):
+    """Almacena resultados de segmentación con análisis de cobertura por píxeles"""
+    __tablename__ = "segmentation_results"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    scene_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("scenes.id", ondelete="CASCADE"), nullable=False)
+    
+    # --- DATOS DE COBERTURA POR PÍXELES ---
+    total_pixels: Mapped[int] = mapped_column(Integer, nullable=False, default=262144)
+    image_resolution: Mapped[str] = mapped_column(String(50), nullable=False, default="512x512")
+    
+    # JSONB es más eficiente que JSON en PostgreSQL para búsquedas
+    coverage_by_class: Mapped[dict] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=dict,
+    )
+    
+    scene: Mapped[Scene] = relationship(back_populates="segmentation_results")
+    summary: Mapped["SegmentationSummary"] = relationship(back_populates="segmentation_result", cascade="all,delete-orphan", uselist=False)
+
+    __table_args__ = (
+        Index('idx_segmentation_scene_id', 'scene_id'),
+        Index('idx_segmentation_created_at', 'created_at'),
+    )
+
+
+class SegmentationSummary(Base, TimestampMixin):
+    """Tabla de resumen para búsquedas rápidas sin parsear JSON"""
+    __tablename__ = "segmentation_summaries"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    segmentation_result_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("segmentation_results.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True
+    )
+    
+    # Columnas desnormalizadas de las clases más importantes
+    dominant_class_name: Mapped[str] = mapped_column(String(255), nullable=True)
+    dominant_class_percentage: Mapped[float] = mapped_column(Float, nullable=True)
+    
+    second_class_name: Mapped[str] = mapped_column(String(255), nullable=True)
+    second_class_percentage: Mapped[float] = mapped_column(Float, nullable=True)
+    
+    segmentation_result: Mapped[SegmentationResult] = relationship(back_populates="summary")

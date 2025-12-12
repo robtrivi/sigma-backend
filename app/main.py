@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
-from app.routers import aggregations, catalogs, imports, regions, reports, segments, subregions
+from app.routers import aggregations, catalogs, imports, regions, reports, segments, subregions, tiff_validation
 
 settings = get_settings()
 logging.basicConfig(level=logging.INFO)
@@ -28,6 +28,7 @@ app.include_router(catalogs.router, prefix=settings.api_prefix)
 app.include_router(reports.router, prefix=settings.api_prefix)
 app.include_router(subregions.router, prefix=settings.api_prefix)
 app.include_router(aggregations.router, prefix=settings.api_prefix)
+app.include_router(tiff_validation.router, prefix=settings.api_prefix)
 
 
 @app.get("/health", tags=["system"])
