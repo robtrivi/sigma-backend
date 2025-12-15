@@ -1,9 +1,22 @@
 from __future__ import annotations
 
 import logging
+import os
+import warnings
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+# ===== CONFIGURACIÓN GDAL/PROJ =====
+# Configurar GDAL para evitar warnings de PROJ
+os.environ['PROJ_SKIP_NETWORK'] = 'YES'
+os.environ['GDAL_DISABLE_READDIR_ON_OPEN'] = 'YES'
+
+# Supprimir warnings no críticos de rasterio
+warnings.filterwarnings('ignore', category=UserWarning, module='rasterio')
+logging.getLogger('rasterio._env').setLevel(logging.ERROR)
+logging.getLogger('rasterio._gdal').setLevel(logging.ERROR)
+# ===================================
 
 from app.core.config import get_settings
 from app.routers import aggregations, catalogs, imports, regions, reports, segments, subregions, tiff_validation

@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import shutil
 from datetime import date
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+import threading
 
 from app.core.config import get_settings
 from app.core.db import get_db
@@ -16,6 +20,7 @@ from app.schemas.schemas import (
     SegmentsImportResponse,
 )
 from app.services.dl_segmentation_service import DLSegmentationService
+from app.services.progress_service import get_progress_service
 from app.services.segments_service import SegmentsService
 
 router = APIRouter(prefix="/imports", tags=["imports"])
@@ -81,14 +86,35 @@ async def upload_scene(
     db.commit()
     db.refresh(scene)
     
+    # Start segmentation in background thread
     try:
         sceneFile.file.seek(0)
-        tiff_bytes = await sceneFile.read()
-        dl_segmentation_service.segment_scene(db, str(scene.id), tiff_bytes)
+        tiff_bytes_content = await sceneFile.read()
+        
+        # Create a new database session for the background thread
+        def run_segmentation():
+            from app.core.db import SessionLocal
+            db_bg = SessionLocal()
+            try:
+                dl_segmentation_service.segment_scene(db_bg, str(scene.id), tiff_bytes_content)
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Automatic segmentation failed for scene {scene.id}: {e}")
+                from app.services.progress_service import get_progress_service
+                progress_service = get_progress_service()
+                progress_service.error_progress(str(scene.id), str(e))
+            finally:
+                db_bg.close()
+        
+        # Execute in background thread
+        thread = threading.Thread(target=run_segmentation, daemon=True)
+        thread.start()
+        
     except Exception as e:
         import logging
         logger = logging.getLogger(__name__)
-        logger.error(f"Automatic segmentation failed for scene {scene.id}: {e}")
+        logger.error(f"Error starting segmentation for scene {scene.id}: {e}")
     
     return SceneUploadResponse(
         sceneId=str(scene.id),
@@ -97,6 +123,44 @@ async def upload_scene(
         epsg=scene.epsg,
         sensor=scene.sensor,
         rasterPath=scene.raster_path,
+    )
+
+
+@router.get("/progress/{scene_id}")
+async def stream_progress(scene_id: str):
+    """Stream progress updates for a scene using Server-Sent Events."""
+    progress_service = get_progress_service()
+    
+    async def event_generator():
+        # Enviar progreso inicial
+        progress = progress_service.get_progress(scene_id)
+        if progress:
+            yield f"data: {json.dumps(progress.to_dict())}\n\n"
+        
+        # Esperar actualizaciones cada 200ms hasta que esté completado
+        max_iterations = 300  # ~60 segundos máximo
+        iteration = 0
+        
+        while iteration < max_iterations:
+            await asyncio.sleep(0.2)
+            iteration += 1
+            
+            progress = progress_service.get_progress(scene_id)
+            if progress:
+                yield f"data: {json.dumps(progress.to_dict())}\n\n"
+                
+                # Detener si se completó o hubo error
+                if progress.status in ("completed", "error"):
+                    break
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
     )
 
 

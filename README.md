@@ -109,11 +109,11 @@ app/
 alembic/         # Configuración y migraciones
 pyproject.toml   # Configuración del proyecto y dependencias gestionadas por uv
 ```
-
+s
 ## Resumen de endpoints
 
 - `POST /api/v1/imports/scenes`  
-  Ingesta de escenas satelitales (multipart + subida de TIFF/JP2).
+  Ingesta de escenas aéreas (multipart + subida de TIFF/JP2).
 
 - `POST /api/v1/imports/segments`  
   Ingesta masiva de segmentos vía GeoJSON FeatureCollection.
