@@ -121,6 +121,10 @@ def get_coverage(
                     pixel_count = item.get('pixel_count', 0)
                     coverage_percentage = item.get('coverage_percentage', 0.0)
                     
+                    # Saltar la clase "unlabeled" (class_id = 0)
+                    if class_id == 0 or class_name.lower() == 'unlabeled':
+                        continue
+                    
                     # Calcular area_m2 si falta
                     area_m2 = item.get('area_m2')
                     if area_m2 is None:
@@ -331,8 +335,15 @@ def get_mask_info(scene_id: str, db: Session = Depends(get_db)):
             img_array = np.transpose(data, (1, 2, 0)).astype(np.uint8)
             logger.info(f"[MASK-INFO] Array: {img_array.shape}, min={img_array.min()}, max={img_array.max()}")
             
-            # Convertir a PNG
-            img = Image.fromarray(img_array, 'RGB')
+            # Crear imagen RGBA con transparencia para píxeles blancos
+            img_rgba = np.dstack([img_array, np.ones((img_array.shape[0], img_array.shape[1]), dtype=np.uint8) * 255])
+            
+            # Hacer transparentes los píxeles blancos (255, 255, 255)
+            white_mask = np.all(img_array == [255, 255, 255], axis=2)
+            img_rgba[white_mask, 3] = 0  # Alpha = 0 (transparente)
+            
+            # Convertir a PNG con transparencia
+            img = Image.fromarray(img_rgba, 'RGBA')
             buffer = io.BytesIO()
             img.save(buffer, format='PNG')
             buffer.seek(0)
@@ -437,8 +448,9 @@ def get_mask_filtered(scene_id: str, classes: str = "", db: Session = Depends(ge
             # Convertir a (H, W, C)
             img_array = np.transpose(data, (1, 2, 0)).astype(np.uint8)
             
-            # Crear imagen filtrada - mostrar solo píxeles de clases seleccionadas
-            filtered_array = np.zeros_like(img_array)
+            # Crear imagen filtrada con RGBA - mostrar solo píxeles de clases seleccionadas
+            filtered_array_rgb = np.zeros_like(img_array)
+            filtered_mask = np.zeros((img_array.shape[0], img_array.shape[1]), dtype=bool)
             
             for class_id in selected_class_ids:
                 color = CLASS_COLORS_RGB[class_id]
@@ -446,10 +458,15 @@ def get_mask_filtered(scene_id: str, classes: str = "", db: Session = Depends(ge
                 mask = (img_array[:, :, 0] == color[0]) & \
                        (img_array[:, :, 1] == color[1]) & \
                        (img_array[:, :, 2] == color[2])
-                filtered_array[mask] = color
+                filtered_array_rgb[mask] = color
+                filtered_mask |= mask
+            
+            # Crear imagen RGBA con transparencia
+            filtered_array_rgba = np.dstack([filtered_array_rgb, np.zeros((filtered_array_rgb.shape[0], filtered_array_rgb.shape[1]), dtype=np.uint8)])
+            filtered_array_rgba[filtered_mask, 3] = 255  # Opaco para píxeles seleccionados
             
             # Convertir a PNG
-            img = Image.fromarray(filtered_array.astype(np.uint8), 'RGB')
+            img = Image.fromarray(filtered_array_rgba.astype(np.uint8), 'RGBA')
             buffer = io.BytesIO()
             img.save(buffer, format='PNG')
             buffer.seek(0)
@@ -630,8 +647,9 @@ def get_masks_by_period(region_id: str, periodo: str = Query(...), classes: str 
                             logger.warning(f"[MASKS-BY-PERIOD] Formato de clases inválido: {classes}")
                         
                         if selected_class_ids:
-                            # Crear imagen filtrada - mostrar solo píxeles de clases seleccionadas
-                            filtered_array = np.zeros_like(img_array)
+                            # Crear imagen filtrada RGBA - mostrar solo píxeles de clases seleccionadas
+                            filtered_array_rgb = np.zeros_like(img_array)
+                            filtered_mask = np.zeros((img_array.shape[0], img_array.shape[1]), dtype=bool)
                             
                             for class_id in selected_class_ids:
                                 if class_id in CLASS_COLORS_RGB:
@@ -640,12 +658,24 @@ def get_masks_by_period(region_id: str, periodo: str = Query(...), classes: str 
                                     mask = (img_array[:, :, 0] == color[0]) & \
                                            (img_array[:, :, 1] == color[1]) & \
                                            (img_array[:, :, 2] == color[2])
-                                    filtered_array[mask] = color
+                                    filtered_array_rgb[mask] = color
+                                    filtered_mask |= mask
                             
-                            img_array = filtered_array
+                            # Crear imagen RGBA con transparencia
+                            img_array = np.dstack([filtered_array_rgb, np.zeros((filtered_array_rgb.shape[0], filtered_array_rgb.shape[1]), dtype=np.uint8)])
+                            img_array[filtered_mask, 3] = 255  # Opaco para píxeles seleccionados
+                        else:
+                            # Si no hay filtro, convertir a RGBA con transparencia para fondo blanco
+                            img_rgba = np.dstack([img_array, np.ones((img_array.shape[0], img_array.shape[1]), dtype=np.uint8) * 255])
+                            white_mask = np.all(img_array == [255, 255, 255], axis=2)
+                            img_rgba[white_mask, 3] = 0  # Alpha = 0 (transparente)
+                            img_array = img_rgba
                     
-                    # Convertir a PNG
-                    img = Image.fromarray(img_array, 'RGB')
+                    # Convertir a PNG con transparencia
+                    if img_array.shape[2] == 3:
+                        img = Image.fromarray(img_array, 'RGB')
+                    else:
+                        img = Image.fromarray(img_array, 'RGBA')
                     buffer = io.BytesIO()
                     img.save(buffer, format='PNG')
                     buffer.seek(0)
@@ -794,8 +824,21 @@ def get_aggregated_pixel_coverage(region_id: str, periodo: str = Query(...), db:
         # Calcular porcentajes y áreas
         coverage_data = []
         total_area_m2 = 0
+        total_pixels_without_unlabeled = 0
+        
+        # Primero, calcular el total de píxeles sin "unlabeled"
+        for class_name, pixel_count in pixel_aggregator.items():
+            if class_name.lower() != 'unlabeled':
+                total_pixels_without_unlabeled += pixel_count
+        
+        # Luego, construir los datos de cobertura con porcentajes correctos
         for class_name, pixel_count in sorted(pixel_aggregator.items()):
-            coverage_percentage = (pixel_count / total_pixels) * 100
+            # Saltar la clase "unlabeled"
+            if class_name.lower() == 'unlabeled':
+                continue
+            
+            # Calcular porcentaje basado en el total SIN "unlabeled"
+            coverage_percentage = (pixel_count / total_pixels_without_unlabeled * 100) if total_pixels_without_unlabeled > 0 else 0
             area_m2 = round(float(pixel_count * pixel_area_m2), 2)
             total_area_m2 += area_m2
             
@@ -806,12 +849,12 @@ def get_aggregated_pixel_coverage(region_id: str, periodo: str = Query(...), db:
                 "area_m2": area_m2
             })
         
-        logger.info(f"[PIXEL-COVERAGE-AGG] Aggregated {len(coverage_data)} classes, total {total_pixels} pixels, {total_area_m2} m²")
+        logger.info(f"[PIXEL-COVERAGE-AGG] Aggregated {len(coverage_data)} classes, total {total_pixels_without_unlabeled} pixels (without unlabeled), {total_area_m2} m²")
         
         return {
             "regionId": region_id,
             "periodo": periodo,
-            "totalPixels": total_pixels,
+            "totalPixels": total_pixels_without_unlabeled,
             "totalAreaM2": total_area_m2,
             "pixelAreaM2": pixel_area_m2,
             "coverageByClass": coverage_data

@@ -655,18 +655,30 @@ class DLSegmentationService:
             23: (255, 0, 0),    # conflicting
         }
         
-        # Crear imagen RGB
-        mask_rgb = np.zeros((*mask_ids.shape, 3), dtype=np.uint8)
+        # Crear imagen RGBA (con transparencia)
+        mask_rgba = np.zeros((*mask_ids.shape, 4), dtype=np.uint8)
         
         for class_id, color_rgb in class_colors_rgb.items():
-            mask_rgb[mask_ids == class_id] = color_rgb
+            mask = mask_ids == class_id
+            mask_rgba[mask, :3] = color_rgb  # RGB
+            mask_rgba[mask, 3] = 255  # Alpha = opaco
+        
+        # Los píxeles no clasificados (alpha=0) serán transparentes
         
         # Crear directorio de escena si no existe
         scene_dir = Path(self.settings.data_dir) / "scenes" / str(scene.id)
         scene_dir.mkdir(parents=True, exist_ok=True)
         
-        # Guardar como GeoTIFF
+        # Guardar como GeoTIFF (sin transparencia para compatibilidad)
         mask_path = scene_dir / "mask_predicted_rgb.tif"
+        
+        # Convertir a RGB para almacenamiento en TIFF (rellenar transparentes con blanco)
+        mask_rgb = np.zeros((*mask_ids.shape, 3), dtype=np.uint8)
+        mask_rgb[:, :] = [255, 255, 255]  # Fondo blanco
+        
+        for class_id, color_rgb in class_colors_rgb.items():
+            mask = mask_ids == class_id
+            mask_rgb[mask] = color_rgb
         
         logger.info(f"[_save_mask_rgb] Guardando máscara RGB en {mask_path} con CRS EPSG:{crs}")
         
