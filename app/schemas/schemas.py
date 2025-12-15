@@ -268,17 +268,20 @@ class TiffValidationRequest(BaseModel):
 # Segmentation and Pixel Coverage Analysis Schemas
 
 class PixelCoverageItem(BaseModel):
-    """Cobertura de una clase en píxeles"""
+    """Cobertura de una clase en píxeles y área en metros cuadrados"""
     class_id: int
     class_name: str
     pixel_count: int
     coverage_percentage: float
+    area_m2: float | None = None  # Área en metros cuadrados
 
 
 class SegmentationResponseDTO(BaseModel):
-    """Respuesta de predicción con análisis de cobertura por píxeles"""
+    """Respuesta de predicción con análisis de cobertura por píxeles y área en m²"""
     scene_id: str
     total_pixels: int
+    total_area_m2: float | None = None
+    pixel_area_m2: float | None = None
     coverage_by_class: List[PixelCoverageItem]
     
     class Config:
@@ -286,18 +289,22 @@ class SegmentationResponseDTO(BaseModel):
             "example": {
                 "scene_id": "550e8400-e29b-41d4-a716-446655440000",
                 "total_pixels": 262144,
+                "total_area_m2": 262144.0,
+                "pixel_area_m2": 1.0,
                 "coverage_by_class": [
                     {
                         "class_id": 0,
                         "class_name": "Vegetación",
                         "pixel_count": 131072,
-                        "coverage_percentage": 50.0
+                        "coverage_percentage": 50.0,
+                        "area_m2": 131072.0
                     },
                     {
                         "class_id": 1,
                         "class_name": "Agua",
                         "pixel_count": 65536,
-                        "coverage_percentage": 25.0
+                        "coverage_percentage": 25.0,
+                        "area_m2": 65536.0
                     }
                 ]
             }
@@ -308,6 +315,8 @@ class SegmentationCoverageRead(BaseModel):
     """Lectura de cobertura guardada en BD"""
     scene_id: str
     total_pixels: int
+    total_area_m2: float | None = None
+    pixel_area_m2: float | None = None
     image_resolution: str
     coverage_by_class: List[PixelCoverageItem]
     created_at: datetime

@@ -50,7 +50,7 @@ class SegmentationProgress:
                 ProgressStep(name="Lectura de datos geoespaciales", status="pending"),
                 ProgressStep(name="Procesamiento con modelo de segmentación", status="pending"),
                 ProgressStep(name="Generación de máscara predicha", status="pending"),
-                ProgressStep(name="Cálculo de píxeles por clase", status="pending"),
+                ProgressStep(name="Cálculo de área por clase (m²)", status="pending"),
                 ProgressStep(name="Creación de segmentos en base de datos", status="pending"),
             ]
 

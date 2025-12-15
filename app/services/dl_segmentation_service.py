@@ -218,18 +218,21 @@ class DLSegmentationService:
                 message="Máscara guardada"
             )
             
-            # Step 4: Calculate pixels per class
+            # Step 4: Calculate area per class in m²
             progress_service.update_step(
                 scene_id, 4, "in-progress",
-                message="Calculando píxeles por clase"
+                message="Calculando área por clase (m²)"
             )
-            coverage_data = self._calculate_pixel_coverage(mask_ids_model, num_classes)
-            total_pixels = mask_ids_model.size
-            self._save_coverage_to_db(db, scene, coverage_data, total_pixels)
+            # Calcular área de cada píxel en m² desde el transform de rasterio
+            pixel_area_m2 = abs(transform.a * transform.e) if transform else 1.0
+            
+            coverage_data = self._calculate_pixel_coverage(mask_ids_original, num_classes, pixel_area_m2)
+            total_pixels = mask_ids_original.size
+            self._save_coverage_to_db(db, scene, coverage_data, total_pixels, original_shape, pixel_area_m2)
             logger.info(f"Pixel coverage analysis saved for scene {scene_id}")
             progress_service.update_step(
                 scene_id, 4, "completed",
-                message="Análisis de cobertura completado"
+                message="Análisis de área completado"
             )
             
             # Step 5: Create segments
@@ -489,19 +492,21 @@ class DLSegmentationService:
         self,
         mask: np.ndarray,
         num_classes: int,
+        pixel_area_m2: float = 1.0,
     ) -> List[PixelCoverageItem]:
         """
-        Calcula cobertura basada en píxeles para cada clase.
+        Calcula cobertura basada en píxeles para cada clase usando resolución original.
         Replika la lógica del notebook: predict_external_image
         
         Args:
-            mask: Máscara de predicción con índices de clase (512x512)
+            mask: Máscara de predicción con índices de clase (resolución original de la imagen TIFF)
             num_classes: Número total de clases
+            pixel_area_m2: Área de cada píxel en metros cuadrados (calculada desde transform de rasterio)
         
         Returns:
             Lista de PixelCoverageItem ordenada por cobertura descendente
         """
-        total_pixels = mask.size  # 512 * 512 = 262144
+        total_pixels = mask.size  # Total píxeles en resolución original
         coverage_data = []
         
         for class_id in range(num_classes):
@@ -510,6 +515,9 @@ class DLSegmentationService:
             
             # Calcular porcentaje con 2 decimales
             percentage = round(float((pixel_count / total_pixels) * 100), 2)
+            
+            # Calcular área en m² (píxeles * área por píxel)
+            area_m2 = round(float(pixel_count * pixel_area_m2), 2)
             
             # Obtener nombre de la clase
             class_name = CLASS_NAMES.get(class_id, f"class_{class_id}")
@@ -520,6 +528,7 @@ class DLSegmentationService:
                     class_name=class_name,
                     pixel_count=pixel_count,
                     coverage_percentage=percentage,
+                    area_m2=area_m2,
                 )
             )
         
@@ -534,35 +543,46 @@ class DLSegmentationService:
         scene: Scene,
         coverage_data: List[PixelCoverageItem],
         total_pixels: int,
+        original_shape: tuple,
+        pixel_area_m2: float = 1.0,
     ) -> SegmentationResult:
         """
-        Guarda los datos de cobertura en la base de datos.
+        Guarda los datos de cobertura en la base de datos usando la resolución original.
         
         Args:
             db: Sesión de base de datos
             scene: Escena a la que pertenece la segmentación
-            coverage_data: Lista de PixelCoverageItem
-            total_pixels: Total de píxeles analizados
+            coverage_data: Lista de PixelCoverageItem calculados con máscara en resolución original
+            total_pixels: Total de píxeles analizados (resolución original)
+            original_shape: Tupla (height, width) de la imagen original
+            pixel_area_m2: Área de cada píxel en metros cuadrados
         
         Returns:
             SegmentationResult guardado en BD
         """
-        # Convertir PixelCoverageItem a dict para JSONB
+        # Convertir PixelCoverageItem a dict para JSONB (incluir área en m²)
         coverage_dict = [
             {
                 "class_id": item.class_id,
                 "class_name": item.class_name,
                 "pixel_count": item.pixel_count,
                 "coverage_percentage": item.coverage_percentage,
+                "area_m2": item.area_m2,
             }
             for item in coverage_data
         ]
         
         # Crear registro de resultado de segmentación
+        # original_shape es (height, width) de la imagen original
+        image_resolution = f"{original_shape[1]}x{original_shape[0]}"
+        total_area_m2 = total_pixels * pixel_area_m2
+        
         segmentation_result = SegmentationResult(
             scene_id=scene.id,
             total_pixels=total_pixels,
-            image_resolution="512x512",
+            image_resolution=image_resolution,
+            pixel_area_m2=pixel_area_m2,
+            total_area_m2=total_area_m2,
             coverage_by_class=coverage_dict,
         )
         db.add(segmentation_result)

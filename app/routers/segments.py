@@ -15,6 +15,7 @@ from app.schemas.schemas import (
     SegmentsImportResponse,
     SegmentationCoverageRead,
     SegmentationCoverageSummary,
+    PixelCoverageItem,
 )
 from app.services.dl_segmentation_service import DLSegmentationService
 from app.services.segments_service import SegmentsService
@@ -102,11 +103,52 @@ def get_coverage(
             detail=f"No segmentation results found for scene {scene_id}"
         )
     
+    # Convertir coverage_by_class a modelos de Pydantic para validar y rellenar campos faltantes
+    coverage_items = []
+    try:
+        # Manejar ambos casos: lista de diccionarios o diccionario
+        coverage_list = result.coverage_by_class
+        if isinstance(coverage_list, dict):
+            # Si es diccionario, convertir a lista
+            coverage_list = list(coverage_list.values()) if coverage_list else []
+        
+        if isinstance(coverage_list, list):
+            for item in coverage_list:
+                if isinstance(item, dict):
+                    # Rellenar campos que podrían faltar
+                    class_id = item.get('class_id', 0)
+                    class_name = item.get('class_name', f'class_{class_id}')
+                    pixel_count = item.get('pixel_count', 0)
+                    coverage_percentage = item.get('coverage_percentage', 0.0)
+                    
+                    # Calcular area_m2 si falta
+                    area_m2 = item.get('area_m2')
+                    if area_m2 is None:
+                        area_m2 = round(float(pixel_count * result.pixel_area_m2), 2)
+                    
+                    # Crear el modelo Pydantic con todos los campos
+                    coverage_item = PixelCoverageItem(
+                        class_id=int(class_id),
+                        class_name=str(class_name),
+                        pixel_count=int(pixel_count),
+                        coverage_percentage=float(coverage_percentage),
+                        area_m2=float(area_m2)
+                    )
+                    coverage_items.append(coverage_item)
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error procesando coverage_by_class para scene {scene_id}: {type(e).__name__}: {str(e)}")
+        # Devolver lista vacía si hay error en procesamiento
+        coverage_items = []
+    
     return SegmentationCoverageRead(
         scene_id=str(result.scene_id),
         total_pixels=result.total_pixels,
+        total_area_m2=result.total_area_m2,
+        pixel_area_m2=result.pixel_area_m2,
         image_resolution=result.image_resolution,
-        coverage_by_class=result.coverage_by_class,
+        coverage_by_class=coverage_items,
         created_at=result.created_at,
     )
 
@@ -739,23 +781,39 @@ def get_aggregated_pixel_coverage(region_id: str, periodo: str = Query(...), db:
             logger.warning(f"[PIXEL-COVERAGE-AGG] No pixel data found for period {periodo}")
             raise HTTPException(status_code=404, detail="No pixel coverage data found")
         
-        # Calcular porcentajes
+        # Obtener pixel_area_m2 de cualquier escena disponible
+        pixel_area_m2 = 1.0
+        for scene in scenes:
+            result = db.query(SegmentationResult).filter(
+                SegmentationResult.scene_id == scene.id
+            ).first()
+            if result and result.pixel_area_m2:
+                pixel_area_m2 = result.pixel_area_m2
+                break
+        
+        # Calcular porcentajes y áreas
         coverage_data = []
+        total_area_m2 = 0
         for class_name, pixel_count in sorted(pixel_aggregator.items()):
             coverage_percentage = (pixel_count / total_pixels) * 100
+            area_m2 = round(float(pixel_count * pixel_area_m2), 2)
+            total_area_m2 += area_m2
             
             coverage_data.append({
                 "class_name": class_name,
                 "pixel_count": pixel_count,
-                "coverage_percentage": coverage_percentage
+                "coverage_percentage": coverage_percentage,
+                "area_m2": area_m2
             })
         
-        logger.info(f"[PIXEL-COVERAGE-AGG] Aggregated {len(coverage_data)} classes, total {total_pixels} pixels")
+        logger.info(f"[PIXEL-COVERAGE-AGG] Aggregated {len(coverage_data)} classes, total {total_pixels} pixels, {total_area_m2} m²")
         
         return {
             "regionId": region_id,
             "periodo": periodo,
             "totalPixels": total_pixels,
+            "totalAreaM2": total_area_m2,
+            "pixelAreaM2": pixel_area_m2,
             "coverageByClass": coverage_data
         }
         

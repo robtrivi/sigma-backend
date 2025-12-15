@@ -121,7 +121,7 @@ class ReportRequest(Base, TimestampMixin):
 
 
 class SegmentationResult(Base, TimestampMixin):
-    """Almacena resultados de segmentación con análisis de cobertura por píxeles"""
+    """Almacena resultados de segmentación con análisis de cobertura por píxeles y área en m²"""
     __tablename__ = "segmentation_results"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -130,6 +130,8 @@ class SegmentationResult(Base, TimestampMixin):
     # --- DATOS DE COBERTURA POR PÍXELES ---
     total_pixels: Mapped[int] = mapped_column(Integer, nullable=False, default=262144)
     image_resolution: Mapped[str] = mapped_column(String(50), nullable=False, default="512x512")
+    pixel_area_m2: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)  # Área por píxel en m²
+    total_area_m2: Mapped[float] = mapped_column(Float, nullable=False, default=262144.0)  # Área total en m²
     
     # JSONB es más eficiente que JSON en PostgreSQL para búsquedas
     coverage_by_class: Mapped[dict] = mapped_column(
