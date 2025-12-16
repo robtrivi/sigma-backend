@@ -768,9 +768,11 @@ def get_aggregated_pixel_coverage(region_id: str, periodo: str = Query(...), db:
             logger.warning(f"[PIXEL-COVERAGE-AGG] No scenes found for region {region_id}, period {periodo}")
             raise HTTPException(status_code=404, detail=f"No scenes found for period {periodo}")
         
-        # Agregador de píxeles por clase
+        # Agregador de píxeles y áreas por clase
         pixel_aggregator = {}
+        area_aggregator = {}
         total_pixels = 0
+        total_area_m2 = 0
         
         for scene in scenes:
             # Obtener resultado de segmentación para la escena
@@ -780,38 +782,46 @@ def get_aggregated_pixel_coverage(region_id: str, periodo: str = Query(...), db:
             
             if result and result.coverage_by_class:
                 # result.coverage_by_class es una LISTA de diccionarios:
-                # [{"class_name": "Vegetación", "pixel_count": X, ...}, ...]
+                # [{"class_name": "Vegetación", "pixel_count": X, "area_m2": Y, ...}, ...]
                 
                 # Si es lista, iterar sobre elementos
                 coverage_items = result.coverage_by_class
                 if isinstance(coverage_items, list):
                     for class_data in coverage_items:
-                        if isinstance(class_data, dict) and 'class_name' in class_data and 'pixel_count' in class_data:
+                        if isinstance(class_data, dict) and 'class_name' in class_data:
                             class_name = class_data['class_name']
-                            pixel_count = class_data['pixel_count']
+                            pixel_count = class_data.get('pixel_count', 0)
+                            area_m2 = class_data.get('area_m2', 0)
                             
                             if class_name not in pixel_aggregator:
                                 pixel_aggregator[class_name] = 0
+                                area_aggregator[class_name] = 0
                             
                             pixel_aggregator[class_name] += pixel_count
+                            area_aggregator[class_name] += area_m2
                             total_pixels += pixel_count
+                            total_area_m2 += area_m2
                 # Si es diccionario, iterar sobre items (compatibilidad hacia atrás)
                 elif isinstance(coverage_items, dict):
                     for class_name, class_data in coverage_items.items():
-                        if isinstance(class_data, dict) and 'pixel_count' in class_data:
-                            pixel_count = class_data['pixel_count']
+                        if isinstance(class_data, dict):
+                            pixel_count = class_data.get('pixel_count', 0)
+                            area_m2 = class_data.get('area_m2', 0)
                             
                             if class_name not in pixel_aggregator:
                                 pixel_aggregator[class_name] = 0
+                                area_aggregator[class_name] = 0
                             
                             pixel_aggregator[class_name] += pixel_count
+                            area_aggregator[class_name] += area_m2
                             total_pixels += pixel_count
+                            total_area_m2 += area_m2
         
         if total_pixels == 0:
             logger.warning(f"[PIXEL-COVERAGE-AGG] No pixel data found for period {periodo}")
             raise HTTPException(status_code=404, detail="No pixel coverage data found")
         
-        # Obtener pixel_area_m2 de cualquier escena disponible
+        # Obtener pixel_area_m2 de cualquier escena disponible (solo para referencia)
         pixel_area_m2 = 1.0
         for scene in scenes:
             result = db.query(SegmentationResult).filter(
@@ -821,26 +831,38 @@ def get_aggregated_pixel_coverage(region_id: str, periodo: str = Query(...), db:
                 pixel_area_m2 = result.pixel_area_m2
                 break
         
-        # Calcular porcentajes y áreas
+        # Calcular porcentajes usando áreas agregadas
         coverage_data = []
-        total_area_m2 = 0
+        total_area_m2_calculated = 0
         total_pixels_without_unlabeled = 0
         
-        # Primero, calcular el total de píxeles sin "unlabeled"
+        # Primero, calcular el total de píxeles y áreas sin "unlabeled" ni "Sin etiqueta"
         for class_name, pixel_count in pixel_aggregator.items():
-            if class_name.lower() != 'unlabeled':
+            if class_name.lower() != 'unlabeled' and class_name != 'Sin etiqueta':
                 total_pixels_without_unlabeled += pixel_count
+                area_m2_class = area_aggregator.get(class_name, 0)
+                total_area_m2_calculated += area_m2_class
         
-        # Luego, construir los datos de cobertura con porcentajes correctos
+        # Luego, construir los datos de cobertura con áreas ya agregadas
+        debug_info = {}
         for class_name, pixel_count in sorted(pixel_aggregator.items()):
-            # Saltar la clase "unlabeled"
-            if class_name.lower() == 'unlabeled':
+            # Saltar la clase "unlabeled" y "Sin etiqueta"
+            if class_name.lower() == 'unlabeled' or class_name == 'Sin etiqueta':
                 continue
             
-            # Calcular porcentaje basado en el total SIN "unlabeled"
-            coverage_percentage = (pixel_count / total_pixels_without_unlabeled * 100) if total_pixels_without_unlabeled > 0 else 0
-            area_m2 = round(float(pixel_count * pixel_area_m2), 2)
-            total_area_m2 += area_m2
+            # Usar el área ya agregada directamente (sumada de múltiples máscaras)
+            area_m2 = round(float(area_aggregator.get(class_name, 0)), 2)
+            
+            # Calcular porcentaje basado en ÁREAS, no en píxeles
+            coverage_percentage = (area_m2 / total_area_m2_calculated * 100) if total_area_m2_calculated > 0 else 0
+            coverage_percentage = round(coverage_percentage, 2)
+            
+            # Guardar información de debug para esta clase
+            debug_info[class_name] = {
+                "area_m2": area_m2,
+                "total_area_m2": total_area_m2_calculated,
+                "percentage_formula": f"{area_m2} / {total_area_m2_calculated} * 100 = {coverage_percentage}%"
+            }
             
             coverage_data.append({
                 "class_name": class_name,
@@ -849,15 +871,16 @@ def get_aggregated_pixel_coverage(region_id: str, periodo: str = Query(...), db:
                 "area_m2": area_m2
             })
         
-        logger.info(f"[PIXEL-COVERAGE-AGG] Aggregated {len(coverage_data)} classes, total {total_pixels_without_unlabeled} pixels (without unlabeled), {total_area_m2} m²")
+        logger.info(f"[PIXEL-COVERAGE-AGG] Aggregated {len(coverage_data)} classes, total {total_pixels_without_unlabeled} pixels (without unlabeled), {total_area_m2_calculated} m²")
         
         return {
             "regionId": region_id,
             "periodo": periodo,
             "totalPixels": total_pixels_without_unlabeled,
-            "totalAreaM2": total_area_m2,
+            "totalAreaM2": total_area_m2_calculated,
             "pixelAreaM2": pixel_area_m2,
-            "coverageByClass": coverage_data
+            "coverageByClass": coverage_data,
+            "_debug_coverage_calculation": debug_info
         }
         
     except HTTPException:

@@ -135,13 +135,17 @@ class AggregationsService:
             )
             .group_by(Segment.class_id, Segment.class_name)
         ).all()
-        total_area = sum(row[2] or 0 for row in rows)
+        # Calcular total de área sin "unlabeled"
+        total_area = sum(row[2] or 0 for row in rows if row[1].lower() != 'unlabeled')
         if total_area == 0:
             return ([], 0.0)
         distribution = []
         green_area = 0.0
         for class_id, class_name, area in rows:
             value = area or 0.0
+            # Saltar "unlabeled" en la distribución
+            if class_name.lower() == 'unlabeled':
+                continue
             if class_id in self.settings.green_class_ids:
                 green_area += value
             distribution.append(
@@ -184,11 +188,15 @@ class AggregationsService:
             )
             .group_by(Segment.class_id, Segment.class_name)
         ).all()
-        total_area = sum(row.area or 0.0 for row in rows)
+        # Calcular total de área sin "unlabeled"
+        total_area = sum(row.area or 0.0 for row in rows if row.class_name.lower() != 'unlabeled')
         distribution = []
         green_area = 0.0
         for row in rows:
             area_value = row.area or 0.0
+            # Saltar "unlabeled" en la distribución
+            if row.class_name.lower() == 'unlabeled':
+                continue
             if row.class_id in self.settings.green_class_ids:
                 green_area += area_value
             percentage = (area_value / total_area) * 100 if total_area else 0.0
@@ -214,11 +222,16 @@ class AggregationsService:
             (Segment.class_id.in_(self.settings.green_class_ids), Segment.area_m2),
             else_=0.0,
         )
+        # Excluir "unlabeled" del total
+        unlabeled_area = case(
+            (Segment.class_name.ilike('unlabeled'), Segment.area_m2),
+            else_=0.0,
+        )
         stmt: Select = (
             select(
                 Segment.periodo,
                 func.sum(green_case).label("green_area"),
-                func.sum(Segment.area_m2).label("total_area"),
+                (func.sum(Segment.area_m2) - func.sum(unlabeled_area)).label("total_area"),
             )
             .where(Segment.region_id == region_id)
             .group_by(Segment.periodo)
