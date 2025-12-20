@@ -173,3 +173,47 @@ async def import_segments(
         return segments_service.import_segments(db, feature_collection)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.delete("/clear-all-data")
+async def clear_all_data(db: Session = Depends(get_db)):
+    """
+    Elimina todos los datos: escenas, segmentaciones y archivos del directorio sigma-backend/data/scenes
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # Obtener todas las escenas
+        all_scenes = db.query(Scene).all()
+        
+        deleted_count = 0
+        for scene in all_scenes:
+            try:
+                # Eliminar carpeta del disco si existe
+                scene_dir = Path(settings.scenes_dir) / str(scene.id)
+                if scene_dir.exists():
+                    shutil.rmtree(scene_dir)
+                    logger.info(f"Deleted scene directory: {scene_dir}")
+                
+                # Usar SQLAlchemy para eliminar la escena por ID (mejor forma de manejar cascadas)
+                db.query(Scene).filter(Scene.id == scene.id).delete(synchronize_session=False)
+                deleted_count += 1
+            except Exception as e:
+                logger.error(f"Error deleting scene {scene.id}: {e}")
+                raise
+        
+        # Confirmar cambios en la base de datos
+        db.commit()
+        
+        logger.info(f"Successfully cleared all data. Deleted {deleted_count} scenes and their associated files.")
+        
+        return {
+            "message": "All data successfully deleted",
+            "deleted_scenes_count": deleted_count
+        }
+    
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error clearing all data: {e}")
+        raise HTTPException(status_code=500, detail=f"Error clearing data: {str(e)}")
