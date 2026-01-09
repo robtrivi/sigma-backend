@@ -734,13 +734,14 @@ def get_aggregated_pixel_coverage(region_id: str, periodo: str = Query(...), db:
     import logging
     from datetime import date
     from sqlalchemy import select, and_
+    from sqlalchemy.orm import joinedload
     from app.models import Scene, SegmentationResult, ClassCatalog
     
     logger = logging.getLogger(__name__)
     settings = get_settings()
     
     try:
-        # Obtener todas las escenas del período
+        # Obtener todas las escenas del período CON SUS RESULTADOS (eager loading)
         parts = periodo.split('-')
         if len(parts) != 2:
             raise HTTPException(status_code=400, detail="Period must be in YYYY-MM format")
@@ -760,9 +761,9 @@ def get_aggregated_pixel_coverage(region_id: str, periodo: str = Query(...), db:
                 Scene.capture_date >= start_date,
                 Scene.capture_date < end_date
             )
-        )
+        ).options(joinedload(Scene.segmentation_results))
         
-        scenes = db.execute(stmt).scalars().all()
+        scenes = db.execute(stmt).unique().scalars().all()
         
         if not scenes:
             logger.warning(f"[PIXEL-COVERAGE-AGG] No scenes found for region {region_id}, period {periodo}")
@@ -773,63 +774,53 @@ def get_aggregated_pixel_coverage(region_id: str, periodo: str = Query(...), db:
         area_aggregator = {}
         total_pixels = 0
         total_area_m2 = 0
+        pixel_area_m2 = 1.0
         
+        # Una sola iteración sobre las escenas
         for scene in scenes:
-            # Obtener resultado de segmentación para la escena
-            result = db.query(SegmentationResult).filter(
-                SegmentationResult.scene_id == scene.id
-            ).first()
-            
-            if result and result.coverage_by_class:
-                # result.coverage_by_class es una LISTA de diccionarios:
-                # [{"class_name": "Vegetación", "pixel_count": X, "area_m2": Y, ...}, ...]
-                
-                # Si es lista, iterar sobre elementos
-                coverage_items = result.coverage_by_class
-                if isinstance(coverage_items, list):
-                    for class_data in coverage_items:
-                        if isinstance(class_data, dict) and 'class_name' in class_data:
-                            class_name = class_data['class_name']
-                            pixel_count = class_data.get('pixel_count', 0)
-                            area_m2 = class_data.get('area_m2', 0)
-                            
-                            if class_name not in pixel_aggregator:
-                                pixel_aggregator[class_name] = 0
-                                area_aggregator[class_name] = 0
-                            
-                            pixel_aggregator[class_name] += pixel_count
-                            area_aggregator[class_name] += area_m2
-                            total_pixels += pixel_count
-                            total_area_m2 += area_m2
-                # Si es diccionario, iterar sobre items (compatibilidad hacia atrás)
-                elif isinstance(coverage_items, dict):
-                    for class_name, class_data in coverage_items.items():
-                        if isinstance(class_data, dict):
-                            pixel_count = class_data.get('pixel_count', 0)
-                            area_m2 = class_data.get('area_m2', 0)
-                            
-                            if class_name not in pixel_aggregator:
-                                pixel_aggregator[class_name] = 0
-                                area_aggregator[class_name] = 0
-                            
-                            pixel_aggregator[class_name] += pixel_count
-                            area_aggregator[class_name] += area_m2
-                            total_pixels += pixel_count
-                            total_area_m2 += area_m2
+            # Ya tenemos los resultados cargados (eager loading)
+            for result in scene.segmentation_results:
+                if result and result.coverage_by_class:
+                    # Obtener pixel_area_m2 de la primera escena disponible
+                    if pixel_area_m2 == 1.0 and result.pixel_area_m2:
+                        pixel_area_m2 = result.pixel_area_m2
+                    
+                    # result.coverage_by_class es una LISTA de diccionarios
+                    coverage_items = result.coverage_by_class
+                    if isinstance(coverage_items, list):
+                        for class_data in coverage_items:
+                            if isinstance(class_data, dict) and 'class_name' in class_data:
+                                class_name = class_data['class_name']
+                                pixel_count = class_data.get('pixel_count', 0)
+                                area_m2 = class_data.get('area_m2', 0)
+                                
+                                if class_name not in pixel_aggregator:
+                                    pixel_aggregator[class_name] = 0
+                                    area_aggregator[class_name] = 0
+                                
+                                pixel_aggregator[class_name] += pixel_count
+                                area_aggregator[class_name] += area_m2
+                                total_pixels += pixel_count
+                                total_area_m2 += area_m2
+                    # Si es diccionario, iterar sobre items (compatibilidad hacia atrás)
+                    elif isinstance(coverage_items, dict):
+                        for class_name, class_data in coverage_items.items():
+                            if isinstance(class_data, dict):
+                                pixel_count = class_data.get('pixel_count', 0)
+                                area_m2 = class_data.get('area_m2', 0)
+                                
+                                if class_name not in pixel_aggregator:
+                                    pixel_aggregator[class_name] = 0
+                                    area_aggregator[class_name] = 0
+                                
+                                pixel_aggregator[class_name] += pixel_count
+                                area_aggregator[class_name] += area_m2
+                                total_pixels += pixel_count
+                                total_area_m2 += area_m2
         
         if total_pixels == 0:
             logger.warning(f"[PIXEL-COVERAGE-AGG] No pixel data found for period {periodo}")
             raise HTTPException(status_code=404, detail="No pixel coverage data found")
-        
-        # Obtener pixel_area_m2 de cualquier escena disponible (solo para referencia)
-        pixel_area_m2 = 1.0
-        for scene in scenes:
-            result = db.query(SegmentationResult).filter(
-                SegmentationResult.scene_id == scene.id
-            ).first()
-            if result and result.pixel_area_m2:
-                pixel_area_m2 = result.pixel_area_m2
-                break
         
         # Calcular porcentajes usando áreas agregadas
         coverage_data = []

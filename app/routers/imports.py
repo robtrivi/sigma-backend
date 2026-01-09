@@ -127,41 +127,23 @@ async def upload_scene(
 
 
 @router.get("/progress/{scene_id}")
-async def stream_progress(scene_id: str):
-    """Stream progress updates for a scene using Server-Sent Events."""
+async def get_progress(scene_id: str):
+    """Get progress for a scene (polling-based, not SSE)."""
     progress_service = get_progress_service()
+    progress = progress_service.get_progress(scene_id)
     
-    async def event_generator():
-        # Enviar progreso inicial
-        progress = progress_service.get_progress(scene_id)
-        if progress:
-            yield f"data: {json.dumps(progress.to_dict())}\n\n"
-        
-        # Esperar actualizaciones cada 200ms hasta que esté completado
-        max_iterations = 300  # ~60 segundos máximo
-        iteration = 0
-        
-        while iteration < max_iterations:
-            await asyncio.sleep(0.2)
-            iteration += 1
-            
-            progress = progress_service.get_progress(scene_id)
-            if progress:
-                yield f"data: {json.dumps(progress.to_dict())}\n\n"
-                
-                # Detener si se completó o hubo error
-                if progress.status in ("completed", "error"):
-                    break
-    
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-            "Connection": "keep-alive",
-        },
-    )
+    if progress:
+        return progress.to_dict()
+    else:
+        return {
+            "sceneId": scene_id,
+            "status": "pending",
+            "currentStep": 0,
+            "totalSteps": 0,
+            "steps": [],
+            "errorMessage": "",
+            "result": None
+        }
 
 
 @router.post("/segments", response_model=SegmentsImportResponse)
