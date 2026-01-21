@@ -501,7 +501,7 @@ def get_mask_filtered(scene_id: str, classes: str = "", db: Session = Depends(ge
 
 
 @router.get("/masks-by-period/{region_id}")
-def get_masks_by_period(region_id: str, periodo: str = Query(...), classes: str = Query(None), colors: str = Query(None), db: Session = Depends(get_db)):
+def get_masks_by_period(region_id: str, periodo: str = Query(...), classes: str = Query(None), colors: str = Query(None), makeUnlabeledTransparent: bool = Query(False), db: Session = Depends(get_db)):
     """
     Devuelve todas las máscaras RGB de las escenas de un período específico.
     
@@ -602,6 +602,12 @@ def get_masks_by_period(region_id: str, periodo: str = Query(...), classes: str 
                     
                     # Convertir a (H, W, C)
                     img_array = np.transpose(data, (1, 2, 0)).astype(np.uint8)
+                    
+                    # Identificar píxeles de "Sin etiqueta" ANTES de aplicar cambios (para transparencia)
+                    unlabeled_mask = None
+                    if makeUnlabeledTransparent:
+                        # Marcar los píxeles de "Sin etiqueta" (clase 0, color original 0,0,0)
+                        unlabeled_mask = (img_array[:, :, 0] == 0) & (img_array[:, :, 1] == 0) & (img_array[:, :, 2] == 0)
                     
                     # Definir colores base
                     CLASS_COLORS_RGB = {
@@ -748,11 +754,19 @@ def get_masks_by_period(region_id: str, periodo: str = Query(...), classes: str 
                                 new_img[mask] = new_color
                             img_array = new_img
                     
-                    # Convertir a PNG con transparencia
+                    # Convertir a RGBA para manejar transparencia
                     if img_array.shape[2] == 3:
-                        img = Image.fromarray(img_array, 'RGB')
+                        # Convertir RGB a RGBA
+                        img_rgba = np.dstack([img_array, np.ones((img_array.shape[0], img_array.shape[1]), dtype=np.uint8) * 255])
                     else:
-                        img = Image.fromarray(img_array, 'RGBA')
+                        img_rgba = img_array
+                    
+                    # Hacer transparentes los píxeles de "Sin etiqueta" si se solicitó
+                    if makeUnlabeledTransparent and unlabeled_mask is not None:
+                        img_rgba[unlabeled_mask, 3] = 0  # Alpha = 0 (transparente) para píxeles sin etiquetar
+                    
+                    # Convertir a PNG con transparencia
+                    img = Image.fromarray(img_rgba, 'RGBA')
                     buffer = io.BytesIO()
                     img.save(buffer, format='PNG')
                     buffer.seek(0)
