@@ -501,7 +501,7 @@ def get_mask_filtered(scene_id: str, classes: str = "", db: Session = Depends(ge
 
 
 @router.get("/masks-by-period/{region_id}")
-def get_masks_by_period(region_id: str, periodo: str = Query(...), classes: str = Query(None), db: Session = Depends(get_db)):
+def get_masks_by_period(region_id: str, periodo: str = Query(...), classes: str = Query(None), colors: str = Query(None), db: Session = Depends(get_db)):
     """
     Devuelve todas las máscaras RGB de las escenas de un período específico.
     
@@ -509,6 +509,7 @@ def get_masks_by_period(region_id: str, periodo: str = Query(...), classes: str 
         region_id: ID de la región
         periodo: Período en formato YYYY-MM (ej: "2025-12")
         classes: Clases a mostrar en la máscara (separadas por comas, ej: "1,2,3")
+        colors: Colores personalizados en formato className:RRGGBB|className:RRGGBB (ej: "paved-area:FF0000|water:0000FF")
         
     Returns:
         Lista de máscaras con metadatos de georeferenciación
@@ -602,35 +603,65 @@ def get_masks_by_period(region_id: str, periodo: str = Query(...), classes: str 
                     # Convertir a (H, W, C)
                     img_array = np.transpose(data, (1, 2, 0)).astype(np.uint8)
                     
-                    # Aplicar filtro de clases si se especifica
+                    # Definir colores base
+                    CLASS_COLORS_RGB = {
+                        0: (0, 0, 0),      # unlabeled
+                        1: (128, 64, 128),  # paved-area
+                        2: (130, 76, 0),    # dirt
+                        3: (0, 102, 0),     # grass
+                        4: (112, 103, 87),  # gravel
+                        5: (28, 42, 168),   # water
+                        6: (48, 41, 30),    # rocks
+                        7: (0, 50, 89),     # pool
+                        8: (107, 142, 35),  # vegetation
+                        9: (70, 70, 70),    # roof
+                        10: (102, 102, 156), # wall
+                        11: (254, 228, 12), # window
+                        12: (254, 148, 12), # door
+                        13: (190, 153, 153), # fence
+                        14: (153, 153, 153), # fence-pole
+                        15: (255, 22, 96),  # person
+                        16: (102, 51, 0),   # dog
+                        17: (9, 143, 150),  # car
+                        18: (119, 11, 32),  # bicycle
+                        19: (51, 51, 0),    # tree
+                        20: (190, 250, 190), # bald-tree
+                        21: (112, 150, 146), # ar-marker
+                        22: (2, 135, 115),  # obstacle
+                        23: (255, 0, 0),    # conflicting
+                    }
+                    
+                    CLASS_NAME_TO_ID = {
+                        'unlabeled': 0, 'paved-area': 1, 'dirt': 2, 'grass': 3, 'gravel': 4,
+                        'water': 5, 'rocks': 6, 'pool': 7, 'vegetation': 8, 'roof': 9,
+                        'wall': 10, 'window': 11, 'door': 12, 'fence': 13, 'fence-pole': 14,
+                        'person': 15, 'dog': 16, 'car': 17, 'bicycle': 18, 'tree': 19,
+                        'bald-tree': 20, 'ar-marker': 21, 'obstacle': 22, 'conflicting': 23
+                    }
+                    
+                    # Parsear y aplicar colores personalizados si se proporcionan
+                    if colors:
+                        try:
+                            # Parsear formato: className:RRGGBB|className:RRGGBB
+                            color_pairs = colors.split('|')
+                            for pair in color_pairs:
+                                if ':' in pair:
+                                    class_name, hex_color = pair.split(':', 1)
+                                    class_name = class_name.strip()
+                                    hex_color = hex_color.strip()
+                                    
+                                    if class_name in CLASS_NAME_TO_ID and len(hex_color) == 6:
+                                        class_id = CLASS_NAME_TO_ID[class_name]
+                                        # Convertir hex a RGB
+                                        r = int(hex_color[0:2], 16)
+                                        g = int(hex_color[2:4], 16)
+                                        b = int(hex_color[4:6], 16)
+                                        CLASS_COLORS_RGB[class_id] = (r, g, b)
+                        except Exception as e:
+                            logger.warning(f"[MASKS-BY-PERIOD] Error al parsear colores personalizados: {str(e)}")
+                    
+                    # Si se especifica filtro de clases, mostrar solo esas clases
                     if classes:
-                        CLASS_COLORS_RGB = {
-                            0: (0, 0, 0),      # unlabeled
-                            1: (128, 64, 128),  # paved-area
-                            2: (130, 76, 0),    # dirt
-                            3: (0, 102, 0),     # grass
-                            4: (112, 103, 87),  # gravel
-                            5: (28, 42, 168),   # water
-                            6: (48, 41, 30),    # rocks
-                            7: (0, 50, 89),     # pool
-                            8: (107, 142, 35),  # vegetation
-                            9: (70, 70, 70),    # roof
-                            10: (102, 102, 156), # wall
-                            11: (254, 228, 12), # window
-                            12: (254, 148, 12), # door
-                            13: (190, 153, 153), # fence
-                            14: (153, 153, 153), # fence-pole
-                            15: (255, 22, 96),  # person
-                            16: (102, 51, 0),   # dog
-                            17: (9, 143, 150),  # car
-                            18: (119, 11, 32),  # bicycle
-                            19: (51, 51, 0),    # tree
-                            20: (190, 250, 190), # bald-tree
-                            21: (112, 150, 146), # ar-marker
-                            22: (2, 135, 115),  # obstacle
-                            23: (255, 0, 0),    # conflicting
-                        }
-                        
                         CLASS_IDS = {
                             0: 'unlabeled', 1: 'paved-area', 2: 'dirt', 3: 'grass', 4: 'gravel',
                             5: 'water', 6: 'rocks', 7: 'pool', 8: 'vegetation', 9: 'roof',
@@ -647,18 +678,46 @@ def get_masks_by_period(region_id: str, periodo: str = Query(...), classes: str 
                             logger.warning(f"[MASKS-BY-PERIOD] Formato de clases inválido: {classes}")
                         
                         if selected_class_ids:
-                            # Crear imagen filtrada RGBA - mostrar solo píxeles de clases seleccionadas
+                            # Crear imagen filtrada - mostrar solo píxeles de clases seleccionadas con colores nuevos
                             filtered_array_rgb = np.zeros_like(img_array)
                             filtered_mask = np.zeros((img_array.shape[0], img_array.shape[1]), dtype=bool)
                             
                             for class_id in selected_class_ids:
-                                if class_id in CLASS_COLORS_RGB:
-                                    color = CLASS_COLORS_RGB[class_id]
-                                    # Encontrar píxeles con este color
-                                    mask = (img_array[:, :, 0] == color[0]) & \
-                                           (img_array[:, :, 1] == color[1]) & \
-                                           (img_array[:, :, 2] == color[2])
-                                    filtered_array_rgb[mask] = color
+                                # Usar color original para encontrar píxeles
+                                original_colors = {
+                                    0: (0, 0, 0),      # unlabeled
+                                    1: (128, 64, 128),  # paved-area
+                                    2: (130, 76, 0),    # dirt
+                                    3: (0, 102, 0),     # grass
+                                    4: (112, 103, 87),  # gravel
+                                    5: (28, 42, 168),   # water
+                                    6: (48, 41, 30),    # rocks
+                                    7: (0, 50, 89),     # pool
+                                    8: (107, 142, 35),  # vegetation
+                                    9: (70, 70, 70),    # roof
+                                    10: (102, 102, 156), # wall
+                                    11: (254, 228, 12), # window
+                                    12: (254, 148, 12), # door
+                                    13: (190, 153, 153), # fence
+                                    14: (153, 153, 153), # fence-pole
+                                    15: (255, 22, 96),  # person
+                                    16: (102, 51, 0),   # dog
+                                    17: (9, 143, 150),  # car
+                                    18: (119, 11, 32),  # bicycle
+                                    19: (51, 51, 0),    # tree
+                                    20: (190, 250, 190), # bald-tree
+                                    21: (112, 150, 146), # ar-marker
+                                    22: (2, 135, 115),  # obstacle
+                                    23: (255, 0, 0),    # conflicting
+                                }
+                                if class_id in original_colors:
+                                    orig_color = original_colors[class_id]
+                                    new_color = CLASS_COLORS_RGB.get(class_id, orig_color)
+                                    # Encontrar píxeles con color original
+                                    mask = (img_array[:, :, 0] == orig_color[0]) & \
+                                           (img_array[:, :, 1] == orig_color[1]) & \
+                                           (img_array[:, :, 2] == orig_color[2])
+                                    filtered_array_rgb[mask] = new_color
                                     filtered_mask |= mask
                             
                             # Crear imagen RGBA con transparencia
@@ -670,6 +729,24 @@ def get_masks_by_period(region_id: str, periodo: str = Query(...), classes: str 
                             white_mask = np.all(img_array == [255, 255, 255], axis=2)
                             img_rgba[white_mask, 3] = 0  # Alpha = 0 (transparente)
                             img_array = img_rgba
+                    else:
+                        # Si no hay filtro de clases pero hay colores personalizados, aplicar los colores a toda la imagen
+                        if colors:
+                            # Reemplazar colores originales con personalizados en toda la imagen
+                            new_img = np.zeros_like(img_array)
+                            for class_id, orig_color in {
+                                0: (0, 0, 0), 1: (128, 64, 128), 2: (130, 76, 0), 3: (0, 102, 0), 4: (112, 103, 87),
+                                5: (28, 42, 168), 6: (48, 41, 30), 7: (0, 50, 89), 8: (107, 142, 35), 9: (70, 70, 70),
+                                10: (102, 102, 156), 11: (254, 228, 12), 12: (254, 148, 12), 13: (190, 153, 153), 14: (153, 153, 153),
+                                15: (255, 22, 96), 16: (102, 51, 0), 17: (9, 143, 150), 18: (119, 11, 32), 19: (51, 51, 0),
+                                20: (190, 250, 190), 21: (112, 150, 146), 22: (2, 135, 115), 23: (255, 0, 0)
+                            }.items():
+                                new_color = CLASS_COLORS_RGB.get(class_id, orig_color)
+                                mask = (img_array[:, :, 0] == orig_color[0]) & \
+                                       (img_array[:, :, 1] == orig_color[1]) & \
+                                       (img_array[:, :, 2] == orig_color[2])
+                                new_img[mask] = new_color
+                            img_array = new_img
                     
                     # Convertir a PNG con transparencia
                     if img_array.shape[2] == 3:

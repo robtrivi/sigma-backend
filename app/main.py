@@ -19,7 +19,7 @@ logging.getLogger('rasterio._gdal').setLevel(logging.ERROR)
 # ===================================
 
 from app.core.config import get_settings
-from app.routers import aggregations, catalogs, imports, regions, reports, segments, subregions, tiff_validation
+from app.routers import aggregations, catalogs, imports, regions, reports, scenes, segments, subregions, tiff_validation
 
 settings = get_settings()
 logging.basicConfig(level=logging.INFO)
@@ -36,6 +36,7 @@ app.add_middleware(
 
 app.include_router(imports.router, prefix=settings.api_prefix)
 app.include_router(segments.router, prefix=settings.api_prefix)
+app.include_router(scenes.router, prefix=settings.api_prefix)
 app.include_router(regions.router, prefix=settings.api_prefix)
 app.include_router(catalogs.router, prefix=settings.api_prefix)
 app.include_router(reports.router, prefix=settings.api_prefix)

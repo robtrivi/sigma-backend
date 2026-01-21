@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import shutil
+import time
 from datetime import date
 from pathlib import Path
 
@@ -27,6 +28,10 @@ router = APIRouter(prefix="/imports", tags=["imports"])
 settings = get_settings()
 segments_service = SegmentsService(settings)
 dl_segmentation_service = DLSegmentationService(settings)
+
+# ✅ Progress cache for reducing frequent memory/DB hits
+_progress_cache = {}
+_cache_timestamp = {}
 
 
 @router.post("/scenes", response_model=SceneUploadResponse)
@@ -128,14 +133,24 @@ async def upload_scene(
 
 @router.get("/progress/{scene_id}")
 async def get_progress(scene_id: str):
-    """Get progress for a scene (polling-based, not SSE)."""
+    """Get progress for a scene (polling-based, with aggressive caching)."""
     progress_service = get_progress_service()
+    
+    # ✅ Cache with 500ms TTL to reduce backend hits on tunnel latency
+    cache_key = f"progress_{scene_id}"
+    now = time.time()
+    
+    if cache_key in _progress_cache:
+        cached_time = _cache_timestamp.get(cache_key, 0)
+        if (now - cached_time) < 0.5:  # 500ms cache TTL
+            return _progress_cache[cache_key]
+    
     progress = progress_service.get_progress(scene_id)
     
     if progress:
-        return progress.to_dict()
+        result = progress.to_dict()
     else:
-        return {
+        result = {
             "sceneId": scene_id,
             "status": "pending",
             "currentStep": 0,
@@ -144,6 +159,18 @@ async def get_progress(scene_id: str):
             "errorMessage": "",
             "result": None
         }
+    
+    # ✅ Store in cache
+    _progress_cache[cache_key] = result
+    _cache_timestamp[cache_key] = now
+    
+    # ✅ Cleanup old cache entries (older than 2 minutes)
+    for key in list(_progress_cache.keys()):
+        if (now - _cache_timestamp.get(key, 0)) > 120:
+            del _progress_cache[key]
+            del _cache_timestamp[key]
+    
+    return result
 
 
 @router.post("/segments", response_model=SegmentsImportResponse)

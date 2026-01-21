@@ -1,4 +1,4 @@
-from app.routers import aggregations, catalogs, imports, regions, reports, segments, subregions, tiff_validation
+from app.routers import aggregations, catalogs, imports, regions, reports, scenes, segments, subregions, tiff_validation
 
 __all__ = [
 	"aggregations",
@@ -6,6 +6,7 @@ __all__ = [
 	"imports",
 	"regions",
 	"reports",
+	"scenes",
 	"segments",
 	"subregions",
 	"tiff_validation",
