@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 from pathlib import Path
 from io import BytesIO
+import aiofiles
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
@@ -156,8 +157,8 @@ async def get_original_image_base64(
         raise HTTPException(status_code=404, detail=f"Scene file not found: {raster_path}")
     
     try:
-        with open(raster_path, 'rb') as f:
-            image_data = f.read()
+        async with aiofiles.open(raster_path, 'rb') as f:
+            image_data = await f.read()
             base64_str = base64.b64encode(image_data).decode('utf-8')
             
             return {

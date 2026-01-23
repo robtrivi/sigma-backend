@@ -84,10 +84,10 @@ def list_region_periods(
 def region_summary(
     region_id: str,
     periodo: str = Query(...),
-    segmentIds: list[str] | None = Query(default=None),
+    segment_ids: list[str] | None = Query(default=None),
     db: Session = Depends(get_db),
 ) -> RegionSummaryResponse:
     try:
-        return aggregations_service.region_summary(db, region_id, periodo, segmentIds)
+        return aggregations_service.region_summary(db, region_id, periodo, segment_ids)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

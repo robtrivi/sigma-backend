@@ -17,7 +17,7 @@ class Settings(BaseSettings):
 
     project_name: str = "SIGMA Backend API"
     api_prefix: str = "/api/v1"
-    database_url: str = "postgresql+psycopg://ejemplo:ejemplo@localhost:5432/ejemplo"
+    database_url: str
     postgis_enabled: bool = True
     data_dir: Path = Path("data")
     scenes_dir: Path | None = None

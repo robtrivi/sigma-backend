@@ -74,6 +74,102 @@ class TiffMetadataExtractor:
     """Extracts comprehensive metadata from GeoTIFF files"""
     
     @staticmethod
+    def _extract_crs_info(src):
+        """Extrae información de CRS desde la fuente rasterio."""
+        crs_wkt = str(src.crs) if src.crs else None
+        epsg_code = src.crs.to_epsg() if src.crs else None
+        return crs_wkt, epsg_code
+    
+    @staticmethod
+    def _extract_bounds(src, epsg_code, warnings: list) -> tuple:
+        """Extrae bounds en coordenadas nativas y WGS84."""
+        bounds = {
+            "minx": src.bounds.left,
+            "miny": src.bounds.bottom,
+            "maxx": src.bounds.right,
+            "maxy": src.bounds.top,
+        }
+        
+        bounds_wgs84 = None
+        if src.crs and epsg_code != 4326:
+            try:
+                from rasterio.warp import transform_bounds
+                wgs84_bounds = transform_bounds(src.crs, "EPSG:4326", *src.bounds)
+                bounds_wgs84 = {
+                    "minx": wgs84_bounds[0],
+                    "miny": wgs84_bounds[1],
+                    "maxx": wgs84_bounds[2],
+                    "maxy": wgs84_bounds[3],
+                }
+            except Exception as e:
+                warnings.append(f"Could not reproject bounds to WGS84: {e}")
+        
+        return bounds, bounds_wgs84
+    
+    @staticmethod
+    def _extract_bands(src, band_count: int, warnings: list) -> list:
+        """Extrae información de cada banda."""
+        bands = []
+        for i in range(1, band_count + 1):
+            try:
+                band_data = src.read(i)
+                colorinterp = src.colorinterp[i - 1] if src.colorinterp else None
+                
+                band_info = BandInfo(
+                    index=i,
+                    dtype=src.dtypes[i - 1],
+                    min_value=float(band_data.min()),
+                    max_value=float(band_data.max()),
+                    nodata=src.nodata,
+                    colorinterp=str(colorinterp) if colorinterp else None,
+                )
+                bands.append(band_info)
+            except Exception as e:
+                warnings.append(f"Could not read band {i}: {e}")
+                bands.append(
+                    BandInfo(
+                        index=i,
+                        dtype=src.dtypes[i - 1] if i < len(src.dtypes) else "unknown",
+                        colorinterp=str(src.colorinterp[i - 1]) if src.colorinterp and i < len(src.colorinterp) else None,
+                    )
+                )
+        return bands
+    
+    @staticmethod
+    def _extract_tags_from_rasterio(src) -> dict:
+        """Extrae tags desde rasterio."""
+        tags = {}
+        try:
+            if hasattr(src, 'tags'):
+                for tag_set in src.tags().values() if isinstance(src.tags(), dict) else []:
+                    if isinstance(tag_set, dict):
+                        tags.update(tag_set)
+        except Exception as e:
+            logger.debug(f"Could not extract tags: {e}")
+        return tags
+    
+    @staticmethod
+    def _extract_tags_from_tifffile(tiff_bytes: bytes, tags: dict) -> None:
+        """Extrae tags adicionales desde tifffile si está disponible."""
+        if not tifffile:
+            return
+        
+        try:
+            with tifffile.TiffFile(io.BytesIO(tiff_bytes)) as tif:
+                if tif.series:
+                    pages = tif.series[0].pages
+                    if pages:
+                        page = pages[0]
+                        if hasattr(page, 'tags'):
+                            for tag_name, tag in page.tags.items():
+                                tags[tag_name] = str(tag.value)
+                        
+                        tags['tifffile_shape'] = page.shape
+                        tags['tifffile_dtype'] = str(page.dtype)
+        except Exception as e:
+            logger.debug(f"tifffile extraction failed: {e}")
+    
+    @staticmethod
     def extract(tiff_bytes: bytes) -> TiffFileInfo:
         """
         Extracts comprehensive metadata from TIFF file.
@@ -87,7 +183,6 @@ class TiffMetadataExtractor:
         warnings = []
         file_size_mb = len(tiff_bytes) / (1024 * 1024)
         
-        # Extract rasterio info
         with MemoryFile(tiff_bytes) as memfile:
             with memfile.open() as src:
                 width = src.width
@@ -95,33 +190,10 @@ class TiffMetadataExtractor:
                 band_count = src.count
                 
                 # CRS information
-                crs_wkt = str(src.crs) if src.crs else None
-                epsg_code = src.crs.to_epsg() if src.crs else None
+                crs_wkt, epsg_code = TiffMetadataExtractor._extract_crs_info(src)
                 
                 # Bounds
-                bounds = {
-                    "minx": src.bounds.left,
-                    "miny": src.bounds.bottom,
-                    "maxx": src.bounds.right,
-                    "maxy": src.bounds.top,
-                }
-                
-                # Reproject bounds to WGS84 if needed
-                bounds_wgs84 = None
-                if src.crs and epsg_code != 4326:
-                    try:
-                        from rasterio.warp import transform_bounds
-                        wgs84_bounds = transform_bounds(
-                            src.crs, "EPSG:4326", *src.bounds
-                        )
-                        bounds_wgs84 = {
-                            "minx": wgs84_bounds[0],
-                            "miny": wgs84_bounds[1],
-                            "maxx": wgs84_bounds[2],
-                            "maxy": wgs84_bounds[3],
-                        }
-                    except Exception as e:
-                        warnings.append(f"Could not reproject bounds to WGS84: {e}")
+                bounds, bounds_wgs84 = TiffMetadataExtractor._extract_bounds(src, epsg_code, warnings)
                 
                 # Pixel size
                 pixel_width = abs(src.transform.a)
@@ -134,62 +206,11 @@ class TiffMetadataExtractor:
                 dtype_primary = src.dtypes[0] if src.dtypes else "unknown"
                 
                 # Band information
-                bands = []
-                for i in range(1, band_count + 1):
-                    try:
-                        band_data = src.read(i)
-                        colorinterp = src.colorinterp[i - 1] if src.colorinterp else None
-                        
-                        band_info = BandInfo(
-                            index=i,
-                            dtype=src.dtypes[i - 1],
-                            min_value=float(band_data.min()),
-                            max_value=float(band_data.max()),
-                            nodata=src.nodata,
-                            colorinterp=str(colorinterp) if colorinterp else None,
-                        )
-                        bands.append(band_info)
-                    except Exception as e:
-                        warnings.append(f"Could not read band {i}: {e}")
-                        bands.append(
-                            BandInfo(
-                                index=i,
-                                dtype=src.dtypes[i - 1] if i < len(src.dtypes) else "unknown",
-                                colorinterp=str(src.colorinterp[i - 1]) if src.colorinterp and i < len(src.colorinterp) else None,
-                            )
-                        )
+                bands = TiffMetadataExtractor._extract_bands(src, band_count, warnings)
                 
                 # Extract tags
-                tags = {}
-                try:
-                    # Try to get GeoTIFF tags
-                    if hasattr(src, 'tags'):
-                        # rasterio v1.3+
-                        for tag_set in src.tags().values() if isinstance(src.tags(), dict) else []:
-                            if isinstance(tag_set, dict):
-                                tags.update(tag_set)
-                except Exception as e:
-                    logger.debug(f"Could not extract tags: {e}")
-                
-                # Additional info using tifffile if available
-                if tifffile:
-                    try:
-                        with tifffile.TiffFile(io.BytesIO(tiff_bytes)) as tif:
-                            # Extract TIFF tags from first image
-                            if tif.series:
-                                pages = tif.series[0].pages
-                                if pages:
-                                    page = pages[0]
-                                    # Add TIFF-specific tags
-                                    if hasattr(page, 'tags'):
-                                        for tag_name, tag in page.tags.items():
-                                            tags[tag_name] = str(tag.value)
-                                    
-                                    # Get page shape and dtype
-                                    tags['tifffile_shape'] = page.shape
-                                    tags['tifffile_dtype'] = str(page.dtype)
-                    except Exception as e:
-                        logger.debug(f"tifffile extraction failed: {e}")
+                tags = TiffMetadataExtractor._extract_tags_from_rasterio(src)
+                TiffMetadataExtractor._extract_tags_from_tifffile(tiff_bytes, tags)
         
         # Validate CRS
         if not crs_wkt:

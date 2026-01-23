@@ -83,6 +83,68 @@ class TiffValidator:
     SUPPORTED_DTYPES = ['uint8', 'uint16', 'uint32', 'int16', 'int32', 'float32', 'float64']
     
     @staticmethod
+    def _validate_dimensions(width: int, height: int) -> None:
+        """Valida que las dimensiones sean suficientemente grandes."""
+        if width < TiffValidator.MIN_WIDTH or height < TiffValidator.MIN_HEIGHT:
+            raise ImageSizeTooSmallError(
+                f"Image dimensions {width}x{height} are too small. "
+                f"Minimum required: {TiffValidator.MIN_WIDTH}x{TiffValidator.MIN_HEIGHT}"
+            )
+    
+    @staticmethod
+    def _validate_bands(bands: int) -> None:
+        """Valida que el número de bandas sea soportado."""
+        if bands not in TiffValidator.SUPPORTED_BANDS:
+            raise InsufficientBandsError(
+                f"Unsupported band count: {bands}. "
+                f"Supported: {TiffValidator.SUPPORTED_BANDS}"
+            )
+    
+    @staticmethod
+    def _check_dtype_warning(dtype: str, warnings_list: list) -> None:
+        """Verifica si el tipo de dato es inusual."""
+        if dtype not in TiffValidator.SUPPORTED_DTYPES:
+            warnings_list.append(
+                f"Unusual data type: {dtype}. "
+                f"Supported: {TiffValidator.SUPPORTED_DTYPES}"
+            )
+    
+    @staticmethod
+    def _check_crs_warnings(crs: str | None, epsg: int | None, warnings_list: list) -> None:
+        """Verifica y agrega warnings relacionados a CRS."""
+        if not crs:
+            warnings_list.append("No CRS information found in TIFF")
+        elif epsg is None and crs:
+            warnings_list.append(f"CRS found ({crs}) but cannot convert to EPSG code")
+    
+    @staticmethod
+    def _check_geotransform_warning(has_geotransform: bool, warnings_list: list) -> None:
+        """Verifica si hay geotransform."""
+        if not has_geotransform:
+            warnings_list.append(
+                "No geotransform information found. "
+                "Geographic bounds will not be accurate."
+            )
+    
+    @staticmethod
+    def _check_compression_warning(compression: str | None, warnings_list: list) -> None:
+        """Verifica si la compresión es soportada."""
+        if compression and compression not in ['lzw', 'deflate', 'zstd', 'none']:
+            warnings_list.append(
+                f"Compression type '{compression}' may not be widely supported"
+            )
+    
+    @staticmethod
+    def _check_file_size_warning(tiff_bytes: bytes, warnings_list: list) -> float:
+        """Verifica si el tamaño del archivo es demasiado grande."""
+        size_mb = len(tiff_bytes) / (1024 * 1024)
+        if size_mb > 500:
+            warnings_list.append(
+                f"Large file ({size_mb:.1f} MB). Processing may take longer."
+            )
+        return size_mb
+    
+    @staticmethod
     @staticmethod
     def validate(tiff_bytes: bytes) -> TiffMetadata:
         """
@@ -105,7 +167,6 @@ class TiffValidator:
         try:
             with MemoryFile(tiff_bytes) as memfile:
                 with warnings.catch_warnings():
-                    # Suprimir warnings de GDAL/PROJ dentro de esta operación
                     warnings.simplefilter('ignore')
                     
                     with memfile.open() as src:
@@ -115,7 +176,7 @@ class TiffValidator:
                         bands = src.count
                         dtype = str(src.dtypes[0]) if src.dtypes else "unknown"
                         
-                        # Extract CRS info silenciosamente
+                        # Extract CRS info
                         crs = None
                         epsg = None
                         try:
@@ -123,89 +184,27 @@ class TiffValidator:
                                 crs = str(src.crs)
                                 epsg = src.crs.to_epsg()
                         except Exception:
-                            # Fallar silenciosamente si hay problemas con CRS
                             crs = None
                             epsg = None
                         
-                        # Extract nodata value
+                        # Extract metadata
                         nodata_value = src.nodata
-                        
-                        # Extract bounds
                         bounds = src.bounds
-                        
-                        # Extract pixel dimensions
-                        pixel_width = abs(src.transform.a)  # pixel width in map units
-                        pixel_height = abs(src.transform.e)  # pixel height in map units
-                        
-                        # Extract compression info
+                        pixel_width = abs(src.transform.a)
+                        pixel_height = abs(src.transform.e)
                         compression = src.compression
                         photometric = src.photometric
-                        
-                        # Check if has geotransform
                         has_geotransform = src.transform is not None
-                        
-                        # Get full file info
                         info = src.profile
                         
-                        # Validation checks
-                        is_valid = True
-                        
-                        # Check dimensions
-                        if width < TiffValidator.MIN_WIDTH or height < TiffValidator.MIN_HEIGHT:
-                            is_valid = False
-                            raise ImageSizeTooSmallError(
-                                f"Image dimensions {width}x{height} are too small. "
-                                f"Minimum required: {TiffValidator.MIN_WIDTH}x{TiffValidator.MIN_HEIGHT}"
-                            )
-                    
-                        # Check number of bands
-                        if bands not in TiffValidator.SUPPORTED_BANDS:
-                            raise InsufficientBandsError(
-                                f"Unsupported band count: {bands}. "
-                                f"Supported: {TiffValidator.SUPPORTED_BANDS}"
-                            )
-                        
-                        # Check data type
-                        if dtype not in TiffValidator.SUPPORTED_DTYPES:
-                            warnings_list.append(
-                                f"Unusual data type: {dtype}. "
-                                f"Supported: {TiffValidator.SUPPORTED_DTYPES}"
-                            )
-                        
-                        # Check CRS
-                        if not crs:
-                            warnings_list.append("No CRS information found in TIFF")
-                        elif epsg is None and crs:
-                            warnings_list.append(
-                                f"CRS found ({crs}) but cannot convert to EPSG code"
-                            )
-                        
-                        # Check for nodata
-                        # Not warning about missing nodata - it's optional for many image types
-                        # if nodata_value is None and bands > 3:
-                        #     warnings_list.append(
-                        #         "No nodata value defined. Segmentation may include invalid pixels."
-                        #     )
-                        
-                        # Check geotransform
-                        if not has_geotransform:
-                            warnings_list.append(
-                                "No geotransform information found. "
-                                "Geographic bounds will not be accurate."
-                            )
-                        
-                        # Check compression
-                        if compression and compression not in ['lzw', 'deflate', 'zstd', 'none']:
-                            warnings_list.append(
-                                f"Compression type '{compression}' may not be widely supported"
-                            )
-                        
-                        # Calculate approximate file size stats
-                        size_mb = len(tiff_bytes) / (1024 * 1024)
-                        if size_mb > 500:
-                            warnings_list.append(
-                                f"Large file ({size_mb:.1f} MB). Processing may take longer."
-                            )
+                        # Validations
+                        TiffValidator._validate_dimensions(width, height)
+                        TiffValidator._validate_bands(bands)
+                        TiffValidator._check_dtype_warning(dtype, warnings_list)
+                        TiffValidator._check_crs_warnings(crs, epsg, warnings_list)
+                        TiffValidator._check_geotransform_warning(has_geotransform, warnings_list)
+                        TiffValidator._check_compression_warning(compression, warnings_list)
+                        size_mb = TiffValidator._check_file_size_warning(tiff_bytes, warnings_list)
                         
                         logger.info(
                             f"TIFF validation successful: {width}x{height}, "
@@ -226,7 +225,7 @@ class TiffValidator:
                             compression=compression,
                             photometric=photometric,
                             has_geotransform=has_geotransform,
-                            is_valid=is_valid,
+                            is_valid=True,
                             warnings=warnings_list,
                         info=str(info)
                     )

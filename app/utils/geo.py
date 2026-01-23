@@ -49,7 +49,7 @@ def parse_bbox(bbox: str) -> Tuple[float, float, float, float]:
 
 
 def flatten(iterable: Iterable) -> list:
-    return [item for item in iterable]
+    return list(iterable)
 
 
 def reproject_geometry(geometry, src_epsg: int, dst_epsg: int):

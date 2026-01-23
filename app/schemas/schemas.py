@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field, ValidationInfo, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 
 class RegionBase(BaseModel):
@@ -21,19 +21,23 @@ class RegionRead(RegionBase):
 
 
 class SceneUploadResponse(BaseModel):
-    sceneId: str
-    regionId: str
-    captureDate: date
+    model_config = ConfigDict(populate_by_name=True)
+    
+    scene_id: str = Field(..., alias="sceneId")
+    region_id: str = Field(..., alias="regionId")
+    capture_date: date = Field(..., alias="captureDate")
     epsg: int
     sensor: str
-    rasterPath: str
+    raster_path: str = Field(..., alias="rasterPath")
 
 
 class SegmentImportProperties(BaseModel):
-    sceneId: str
-    classId: str
+    model_config = ConfigDict(populate_by_name=True)
+    
+    scene_id: str = Field(..., alias="sceneId")
+    class_id: str = Field(..., alias="classId")
     confidence: float
-    areaM2: float
+    area_m2: float = Field(..., alias="areaM2")
     periodo: str
     source: str | None = "import"
 
@@ -64,23 +68,29 @@ class GeoJSONFeatureCollection(BaseModel):
 
 
 class SegmentsImportResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    
     inserted: int
-    segmentIds: List[str]
+    segment_ids: List[str] = Field(..., alias="segmentIds")
 
 
 class SegmentUpdateRequest(BaseModel):
-    classId: Optional[str] = None
+    model_config = ConfigDict(populate_by_name=True)
+    
+    class_id: Optional[str] = Field(None, alias="classId")
     confidence: Optional[float] = None
     notes: Optional[str] = None
 
 
 class SegmentProperties(BaseModel):
-    segmentId: str
-    sceneId: str
-    regionId: str
-    classId: str
-    className: str
-    areaM2: float
+    model_config = ConfigDict(populate_by_name=True)
+    
+    segment_id: str = Field(..., alias="segmentId")
+    scene_id: str = Field(..., alias="sceneId")
+    region_id: str = Field(..., alias="regionId")
+    class_id: str = Field(..., alias="classId")
+    class_name: str = Field(..., alias="className")
+    area_m2: float = Field(..., alias="areaM2")
     periodo: str
     confidence: float
     source: str
@@ -98,15 +108,19 @@ class SegmentFeatureCollection(BaseModel):
 
 
 class AggregationRebuildRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    
     periodo: str
-    regionId: str
+    region_id: str = Field(..., alias="regionId")
 
 
 class DistributionItem(BaseModel):
-    classId: str
-    className: str
+    model_config = ConfigDict(populate_by_name=True)
+    
+    class_id: str = Field(..., alias="classId")
+    class_name: str = Field(..., alias="className")
     percentage: float
-    areaM2: float
+    area_m2: float = Field(..., alias="areaM2")
 
 
 class TrendItem(BaseModel):
@@ -115,72 +129,90 @@ class TrendItem(BaseModel):
 
 
 class RegionSummaryResponse(BaseModel):
-    regionId: str
+    model_config = ConfigDict(populate_by_name=True)
+    
+    region_id: str = Field(..., alias="regionId")
     periodo: str
-    segmentsVisible: int
-    coberturaVerde: float
+    segments_visible: int = Field(..., alias="segmentsVisible")
+    cobertura_verde: float = Field(..., alias="coberturaVerde")
     distribution: List[DistributionItem]
     trend: List[TrendItem]
     messages: List[str]
 
 
 class AggregationSummaryRead(BaseModel):
-    regionId: str
+    model_config = ConfigDict(populate_by_name=True)
+    
+    region_id: str = Field(..., alias="regionId")
     periodo: str
-    totalAreaM2: float
-    greenCoverage: float
+    total_area_m2: float = Field(..., alias="totalAreaM2")
+    green_coverage: float = Field(..., alias="greenCoverage")
     distribution: List[DistributionItem]
     trend: List[TrendItem]
 
 
 class CatalogClassRead(BaseModel):
-    classId: str
+    model_config = ConfigDict(populate_by_name=True)
+    
+    class_id: str = Field(..., alias="classId")
     nombre: str
-    colorHex: str
-    iconoPrimeNg: str | None = None
+    color_hex: str = Field(..., alias="colorHex")
+    icono_prime_ng: str | None = Field(None, alias="iconoPrimeNg")
     description: str | None = None
 
 
 class RegionPeriodItem(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    
     periodo: str
-    regionId: str
-    segmentCount: int
-    lastUpdated: datetime | None = None
+    region_id: str = Field(..., alias="regionId")
+    segment_count: int = Field(..., alias="segmentCount")
+    last_updated: datetime | None = Field(None, alias="lastUpdated")
 
 
 class SubregionHistoryItem(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    
     periodo: str
-    areaM2: float
-    dominantClassId: str
-    dominantClassName: str
-    deltaVsPrev: float | None = None
+    area_m2: float = Field(..., alias="areaM2")
+    dominant_class_id: str = Field(..., alias="dominantClassId")
+    dominant_class_name: str = Field(..., alias="dominantClassName")
+    delta_vs_prev: float | None = Field(None, alias="deltaVsPrev")
 
 
 class SubregionHistoryResponse(BaseModel):
-    subregionId: str
-    regionId: str
+    model_config = ConfigDict(populate_by_name=True)
+    
+    subregion_id: str = Field(..., alias="subregionId")
+    region_id: str = Field(..., alias="regionId")
     history: List[SubregionHistoryItem]
 
 
 class ReportDownloadRequest(BaseModel):
-    regionId: str
+    model_config = ConfigDict(populate_by_name=True)
+    
+    region_id: str = Field(..., alias="regionId")
     periodos: List[str]
-    classFilters: List[str] | None = None
+    class_filters: List[str] | None = Field(None, alias="classFilters")
     segments: List[str] | None = None
 
 
 class ReportJobResponse(BaseModel):
-    reportId: str
-    downloadUrl: str
-    expiresAt: datetime
+    model_config = ConfigDict(populate_by_name=True)
+    
+    report_id: str = Field(..., alias="reportId")
+    download_url: str = Field(..., alias="downloadUrl")
+    expires_at: datetime = Field(..., alias="expiresAt")
 
 
 class ReportDownloadLink(BaseModel):
-    reportId: str
-    regionId: str
+    model_config = ConfigDict(populate_by_name=True)
+    
+    report_id: str = Field(..., alias="reportId")
+    region_id: str = Field(..., alias="regionId")
     filters: Dict[str, Any]
-    downloadUrl: str
-    expiresAt: datetime
+    download_url: str = Field(..., alias="downloadUrl")
+    expires_at: datetime = Field(..., alias="expiresAt")
 
 
 class PeriodRangeQuery(BaseModel):
@@ -189,21 +221,25 @@ class PeriodRangeQuery(BaseModel):
 
 
 class SegmentsTilesQuery(BaseModel):
-    regionId: str
+    model_config = ConfigDict(populate_by_name=True)
+    
+    region_id: str = Field(..., alias="regionId")
     periodo: str
-    classId: List[str] | None = None
+    class_id: List[str] | None = Field(None, alias="classId")
     bbox: str | None = None
 
 
 # TIFF Validation and Metadata Schemas
 
 class TiffBandInfo(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    
     index: int
     dtype: str
-    minValue: Optional[float] = None
-    maxValue: Optional[float] = None
+    min_value: Optional[float] = Field(None, alias="minValue")
+    max_value: Optional[float] = Field(None, alias="maxValue")
     nodata: Optional[Any] = None
-    colorInterp: Optional[str] = None
+    color_interp: Optional[str] = Field(None, alias="colorInterp")
 
 
 class TiffBoundsInfo(BaseModel):
@@ -220,72 +256,75 @@ class TiffPixelSize(BaseModel):
 
 class TiffValidationResponse(BaseModel):
     """Response for TIFF validation endpoint"""
+    model_config = ConfigDict(populate_by_name=True)
+    
     valid: bool
     width: int
     height: int
-    bandCount: int
+    band_count: int = Field(..., alias="bandCount")
     dtype: str
-    epsgCode: Optional[int] = None
-    crsWkt: Optional[str] = None
+    epsg_code: Optional[int] = Field(None, alias="epsgCode")
+    crs_wkt: Optional[str] = Field(None, alias="crsWkt")
     bounds: TiffBoundsInfo
-    boundsWgs84: Optional[TiffBoundsInfo] = None
-    pixelSize: TiffPixelSize
+    bounds_wgs84: Optional[TiffBoundsInfo] = Field(None, alias="boundsWgs84")
+    pixel_size: TiffPixelSize = Field(..., alias="pixelSize")
     compression: Optional[str] = None
     photometric: Optional[str] = None
     bands: List[TiffBandInfo]
-    fileSizeMb: float
+    file_size_mb: float = Field(..., alias="fileSizeMb")
     warnings: List[str]
-    estimatedProcessingTimeSec: Optional[float] = None
+    estimated_processing_time_sec: Optional[float] = Field(None, alias="estimatedProcessingTimeSec")
 
 
 class TiffMetadataResponse(BaseModel):
     """Comprehensive TIFF metadata response"""
+    model_config = ConfigDict(populate_by_name=True)
+    
     width: int
     height: int
-    bandCount: int
-    epsgCode: Optional[int] = None
-    crsWkt: Optional[str] = None
+    band_count: int = Field(..., alias="bandCount")
+    epsg_code: Optional[int] = Field(None, alias="epsgCode")
+    crs_wkt: Optional[str] = Field(None, alias="crsWkt")
     bounds: TiffBoundsInfo
-    boundsWgs84: Optional[TiffBoundsInfo] = None
-    pixelSize: TiffPixelSize
+    bounds_wgs84: Optional[TiffBoundsInfo] = Field(None, alias="boundsWgs84")
+    pixel_size: TiffPixelSize = Field(..., alias="pixelSize")
     compression: Optional[str] = None
     photometric: Optional[str] = None
     bands: List[TiffBandInfo]
     tags: Dict[str, Any] = Field(default_factory=dict)
-    fileSizeBytes: int
-    fileSizeMb: float
+    file_size_bytes: int = Field(..., alias="fileSizeBytes")
+    file_size_mb: float = Field(..., alias="fileSizeMb")
     warnings: List[str]
-    captureDate: Optional[str] = None
-    sensorHints: Dict[str, str] = Field(default_factory=dict)
+    capture_date: Optional[str] = Field(None, alias="captureDate")
+    sensor_hints: Dict[str, str] = Field(default_factory=dict, alias="sensorHints")
 
 
 class TiffValidationRequest(BaseModel):
     """Request to validate TIFF before upload"""
-    epsgCode: Optional[int] = None
-    requireGeotransform: bool = True
+    model_config = ConfigDict(populate_by_name=True)
+    
+    epsg_code: Optional[int] = Field(None, alias="epsgCode")
+    require_geotransform: bool = Field(True, alias="requireGeotransform")
 
 
 # Segmentation and Pixel Coverage Analysis Schemas
 
 class PixelCoverageItem(BaseModel):
     """Cobertura de una clase en píxeles y área en metros cuadrados"""
-    class_id: int
-    class_name: str
-    pixel_count: int
-    coverage_percentage: float
-    area_m2: float | None = None  # Área en metros cuadrados
+    model_config = ConfigDict(populate_by_name=True)
+    
+    class_id: int = Field(..., alias="classId")
+    class_name: str = Field(..., alias="className")
+    pixel_count: int = Field(..., alias="pixelCount")
+    coverage_percentage: float = Field(..., alias="coveragePercentage")
+    area_m2: float | None = Field(None, alias="areaM2")
 
 
 class SegmentationResponseDTO(BaseModel):
     """Respuesta de predicción con análisis de cobertura por píxeles y área en m²"""
-    scene_id: str
-    total_pixels: int
-    total_area_m2: float | None = None
-    pixel_area_m2: float | None = None
-    coverage_by_class: List[PixelCoverageItem]
-    
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        populate_by_name=True,
+        json_schema_extra={
             "example": {
                 "scene_id": "550e8400-e29b-41d4-a716-446655440000",
                 "total_pixels": 262144,
@@ -309,17 +348,26 @@ class SegmentationResponseDTO(BaseModel):
                 ]
             }
         }
+    )
+    
+    scene_id: str = Field(..., alias="sceneId")
+    total_pixels: int = Field(..., alias="totalPixels")
+    total_area_m2: float | None = Field(None, alias="totalAreaM2")
+    pixel_area_m2: float | None = Field(None, alias="pixelAreaM2")
+    coverage_by_class: List[PixelCoverageItem] = Field(..., alias="coverageByClass")
 
 
 class SegmentationCoverageRead(BaseModel):
     """Lectura de cobertura guardada en BD"""
-    scene_id: str
-    total_pixels: int
-    total_area_m2: float | None = None
-    pixel_area_m2: float | None = None
-    image_resolution: str
-    coverage_by_class: List[PixelCoverageItem]
-    created_at: datetime
+    model_config = ConfigDict(populate_by_name=True)
+    
+    scene_id: str = Field(..., alias="sceneId")
+    total_pixels: int = Field(..., alias="totalPixels")
+    total_area_m2: float | None = Field(None, alias="totalAreaM2")
+    pixel_area_m2: float | None = Field(None, alias="pixelAreaM2")
+    image_resolution: str = Field(..., alias="imageResolution")
+    coverage_by_class: List[PixelCoverageItem] = Field(..., alias="coverageByClass")
+    created_at: datetime = Field(..., alias="createdAt")
 
 
 class SegmentationCoverageSummary(BaseModel):

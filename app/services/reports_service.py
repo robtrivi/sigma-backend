@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 import logging
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable, List
 
@@ -33,7 +33,7 @@ class ReportsService:
         file_path = Path(self.settings.reports_dir) / filename
         summaries = self._collect_summaries(db, request)
         self._write_csv(file_path, segments, summaries)
-        expires_at = datetime.utcnow() + timedelta(hours=24)
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
         record = ReportRequest(
             region_id=request.regionId,
             periodos=request.periodos,
@@ -61,7 +61,7 @@ class ReportsService:
         path = Path(report.file_path)
         if not path.exists():
             raise ValueError("Archivo de reporte no disponible")
-        if datetime.utcnow() > report.expires_at:
+        if datetime.now(timezone.utc) > report.expires_at:
             raise ValueError("El enlace del reporte expiró")
         return path
 
@@ -105,7 +105,7 @@ class ReportsService:
         with path.open("w", newline="", encoding="utf-8") as csvfile:
             writer = csv.writer(csvfile)
             writer.writerow(["SIGMA Reporte de Cobertura"])
-            writer.writerow([f"Generado: {datetime.utcnow().isoformat()}Z"])
+            writer.writerow([f"Generado: {datetime.now(timezone.utc).isoformat()}Z"])
             writer.writerow([])
             writer.writerow(["Resumen por periodo"])
             writer.writerow(["Periodo", "Cobertura verde (%)", "Área total (m2)"])

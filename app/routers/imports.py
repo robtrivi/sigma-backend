@@ -36,43 +36,43 @@ _cache_timestamp = {}
 
 @router.post("/scenes", response_model=SceneUploadResponse)
 async def upload_scene(
-    sceneFile: UploadFile = File(...),
-    captureDate: str = Form(...),
+    scene_file: UploadFile = File(...),
+    capture_date: str = Form(...),
     epsg: int = Form(...),
     sensor: str = Form(...),
-    regionId: str = Form(...),
+    region_id: str = Form(...),
     db: Session = Depends(get_db),
 ) -> SceneUploadResponse:
     import logging
     logger = logging.getLogger(__name__)
     
     # Validate inputs
-    if not regionId or not regionId.strip():
-        raise HTTPException(status_code=400, detail="regionId is required")
-    if not captureDate or not captureDate.strip():
-        raise HTTPException(status_code=400, detail="captureDate is required")
+    if not region_id or not region_id.strip():
+        raise HTTPException(status_code=400, detail="region_id is required")
+    if not capture_date or not capture_date.strip():
+        raise HTTPException(status_code=400, detail="capture_date is required")
     if not sensor or not sensor.strip():
         raise HTTPException(status_code=400, detail="sensor is required")
     
-    logger.info(f"Upload scene request: regionId={regionId}, captureDate={captureDate}, epsg={epsg}, sensor={sensor}")
+    logger.info(f"Upload scene request: region_id={region_id}, capture_date={capture_date}, epsg={epsg}, sensor={sensor}")
     
     try:
-        # Convert captureDate string to date object
+        # Convert capture_date string to date object
         from datetime import datetime
-        capture_date_obj = datetime.strptime(captureDate, "%Y-%m-%d").date()
+        capture_date_obj = datetime.strptime(capture_date, "%Y-%m-%d").date()
     except ValueError:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid date format. Expected YYYY-MM-DD, got {captureDate}"
+            detail=f"Invalid date format. Expected YYYY-MM-DD, got {capture_date}"
         )
     
-    region = db.get(Region, regionId)
+    region = db.get(Region, region_id)
     if not region:
-        logger.error(f"Region not found: {regionId}")
-        raise HTTPException(status_code=404, detail=f"Region not found: {regionId}")
+        logger.error(f"Region not found: {region_id}")
+        raise HTTPException(status_code=404, detail=f"Region not found: {region_id}")
     
     scene = Scene(
-        region_id=regionId,
+        region_id=region_id,
         capture_date=capture_date_obj,
         epsg=epsg,
         sensor=sensor,
@@ -82,10 +82,10 @@ async def upload_scene(
     db.flush()
     scene_dir = Path(settings.scenes_dir) / str(scene.id)
     scene_dir.mkdir(parents=True, exist_ok=True)
-    extension = Path(sceneFile.filename or "scene.tif").suffix or ".tif"
+    extension = Path(scene_file.filename or "scene.tif").suffix or ".tif"
     target_path = scene_dir / f"scene{extension}"
     with target_path.open("wb") as buffer:
-        shutil.copyfileobj(sceneFile.file, buffer)
+        shutil.copyfileobj(scene_file.file, buffer)
     scene.raster_path = str(target_path)
     db.add(scene)
     db.commit()
@@ -93,8 +93,8 @@ async def upload_scene(
     
     # Start segmentation in background thread
     try:
-        sceneFile.file.seek(0)
-        tiff_bytes_content = await sceneFile.read()
+        scene_file.file.seek(0)
+        tiff_bytes_content = await scene_file.read()
         
         # Create a new database session for the background thread
         def run_segmentation():
@@ -165,10 +165,10 @@ async def get_progress(scene_id: str):
     _cache_timestamp[cache_key] = now
     
     # ✅ Cleanup old cache entries (older than 2 minutes)
-    for key in list(_progress_cache.keys()):
-        if (now - _cache_timestamp.get(key, 0)) > 120:
-            del _progress_cache[key]
-            del _cache_timestamp[key]
+    keys_to_delete = [key for key in _progress_cache if (now - _cache_timestamp.get(key, 0)) > 120]
+    for key in keys_to_delete:
+        del _progress_cache[key]
+        del _cache_timestamp[key]
     
     return result
 

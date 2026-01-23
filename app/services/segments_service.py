@@ -188,7 +188,7 @@ class SegmentsService:
         prev_total = None
         for periodo in ordered_periods:
             classes = history_map[periodo]
-            dominant_class_id, (dominant_class_name, area) = max(
+            dominant_class_id, (dominant_class_name, _) = max(
                 classes.items(), key=lambda item: item[1][1]
             )
             total_area = sum(area for _, area in classes.values())

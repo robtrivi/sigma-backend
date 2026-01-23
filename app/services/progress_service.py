@@ -4,8 +4,8 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta
-from typing import Dict
+from datetime import datetime, timedelta, timezone
+from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -39,11 +39,11 @@ class SegmentationProgress:
     steps: list[ProgressStep] | None = None
     error_message: str = ""
     result: dict | None = None
-    created_at: datetime = None
+    created_at: Optional[datetime] = None
     
     def __post_init__(self):
         if self.created_at is None:
-            self.created_at = datetime.utcnow()
+            self.created_at = datetime.now(timezone.utc)
         if self.steps is None:
             self.steps = [
                 ProgressStep(name="Validación del archivo TIFF", status="pending"),
@@ -68,7 +68,7 @@ class SegmentationProgress:
 
     def is_expired(self, minutes: int = 60) -> bool:
         """Check if progress data is older than specified minutes."""
-        return datetime.utcnow() - self.created_at > timedelta(minutes=minutes)
+        return datetime.now(timezone.utc) - self.created_at > timedelta(minutes=minutes)
 
 
 class ProgressService:
@@ -104,7 +104,7 @@ class ProgressService:
             step.status = status
             step.message = message
             step.error = error
-            step.timestamp = datetime.utcnow().isoformat()
+            step.timestamp = datetime.now(timezone.utc).isoformat()
             progress.current_step = step_index
 
             if status == "in-progress":
@@ -128,7 +128,7 @@ class ProgressService:
             # Mark last step as completed if not already
             if progress.steps[-1].status != "completed":
                 progress.steps[-1].status = "completed"
-                progress.steps[-1].timestamp = datetime.utcnow().isoformat()
+                progress.steps[-1].timestamp = datetime.now(timezone.utc).isoformat()
             logger.info(f"Segmentation completed for scene {scene_id}")
 
     def error_progress(self, scene_id: str, error_message: str) -> None:

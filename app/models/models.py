@@ -10,6 +10,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
 
+# ===== CONSTANTS =====
+REGIONS_ID_FK = "regions.id"
+
 
 class TimestampMixin:
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
@@ -32,7 +35,7 @@ class Scene(Base, TimestampMixin):
     __tablename__ = "scenes"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    region_id: Mapped[str] = mapped_column(ForeignKey("regions.id", ondelete="RESTRICT"), nullable=False)
+    region_id: Mapped[str] = mapped_column(ForeignKey(REGIONS_ID_FK, ondelete="RESTRICT"), nullable=False)
     capture_date: Mapped[date] = mapped_column(Date, nullable=False)
     epsg: Mapped[int] = mapped_column(Integer, nullable=False)
     sensor: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -60,7 +63,7 @@ class Segment(Base, TimestampMixin):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     scene_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("scenes.id", ondelete="CASCADE"), nullable=False)
-    region_id: Mapped[str] = mapped_column(ForeignKey("regions.id", ondelete="RESTRICT"), nullable=False)
+    region_id: Mapped[str] = mapped_column(ForeignKey(REGIONS_ID_FK, ondelete="RESTRICT"), nullable=False)
     class_id: Mapped[str] = mapped_column(ForeignKey("class_catalog.id", ondelete="RESTRICT"), nullable=False)
     class_name: Mapped[str] = mapped_column(String(255), nullable=False)
     periodo: Mapped[str] = mapped_column(String(7), nullable=False, index=True)
@@ -87,7 +90,7 @@ class AggregationSummary(Base, TimestampMixin):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    region_id: Mapped[str] = mapped_column(ForeignKey("regions.id", ondelete="CASCADE"), nullable=False)
+    region_id: Mapped[str] = mapped_column(ForeignKey(REGIONS_ID_FK, ondelete="CASCADE"), nullable=False)
     periodo: Mapped[str] = mapped_column(String(7), nullable=False)
     total_area_m2: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     green_coverage: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
@@ -101,7 +104,7 @@ class Subregion(Base, TimestampMixin):
     __tablename__ = "subregions"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    region_id: Mapped[str] = mapped_column(ForeignKey("regions.id", ondelete="CASCADE"), nullable=False)
+    region_id: Mapped[str] = mapped_column(ForeignKey(REGIONS_ID_FK, ondelete="CASCADE"), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     geometry: Mapped[WKBElement] = mapped_column(Geometry("MULTIPOLYGON", 4326, spatial_index=True), nullable=False)
 

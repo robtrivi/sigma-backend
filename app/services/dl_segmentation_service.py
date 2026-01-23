@@ -211,7 +211,7 @@ class DLSegmentationService:
             mask_ids_original = self._resize_mask(
                 mask_ids_model, original_shape[0], original_shape[1]
             )
-            self._save_mask_rgb(db, scene, mask_ids_original, image_data, transform, crs)
+            self._save_mask_rgb(scene, mask_ids_original, transform, crs)
             logger.info(f"RGB mask saved for scene {scene_id}")
             progress_service.update_step(
                 scene_id, 3, "completed",
@@ -241,7 +241,7 @@ class DLSegmentationService:
                 message="Creando segmentos en base de datos"
             )
             stats = self._calculate_stats(mask_ids_original, num_classes)
-            features_geo = self._vectorize_mask(mask_ids_original, transform, crs)
+            features_geo = self._vectorize_mask(mask_ids_original, transform)
             segment_ids = self._persist_segments(
                 db, scene, features_geo, stats, scene.epsg
             )
@@ -296,13 +296,13 @@ class DLSegmentationService:
                         # Zona 18S: X 100000-500000, Y 9600000-10000000
                         if bbox.left > 400000 and bbox.left < 800000:
                             crs_epsg = 32717  # UTM Zone 17S
-                            logger.info(f"[_read_tiff] Inferido CRS: EPSG:32717 (UTM 17S)")
+                            logger.info("[_read_tiff] Inferido CRS: EPSG:32717 (UTM 17S)")
                         elif bbox.left > 100000 and bbox.left < 500000:
                             crs_epsg = 32718  # UTM Zone 18S
-                            logger.info(f"[_read_tiff] Inferido CRS: EPSG:32718 (UTM 18S)")
+                            logger.info("[_read_tiff] Inferido CRS: EPSG:32718 (UTM 18S)")
                         else:
                             crs_epsg = 32717  # Default para Ecuador
-                            logger.info(f"[_read_tiff] CRS no detectado, usando default EPSG:32717")
+                            logger.info("[_read_tiff] CRS no detectado, usando default EPSG:32717")
                     except Exception as e:
                         logger.warning(f"[_read_tiff] Error inferring CRS from bounds: {e}. Using default EPSG:32717")
                         crs_epsg = 32717
@@ -363,56 +363,92 @@ class DLSegmentationService:
             stats[class_id] = {"count": int(count), "percentage": percentage}
         return stats
 
+    def _extract_pixel_coordinates(self, contour) -> list | None:
+        """Extrae coordenadas de píxeles desde un contorno, validando formato."""
+        if len(contour) < 3:
+            return None
+        
+        pixel_coords = contour.squeeze()
+        if pixel_coords.ndim != 2 or pixel_coords.shape[1] != 2:
+            return None
+        
+        return pixel_coords
+
+    def _transform_to_geo_coords(self, pixel_coords, transform: Affine) -> list | None:
+        """Transforma coordenadas de píxeles a coordenadas geográficas."""
+        geo_coords = []
+        for col, row in pixel_coords:
+            x, y = transform * (col, row)
+            geo_coords.append((x, y))
+        
+        if len(geo_coords) < 3:
+            return None
+        
+        return geo_coords
+
+    def _create_multipolygon(self, geo_coords) -> MultiPolygon | None:
+        """Crea un MultiPolygon desde coordenadas geográficas."""
+        try:
+            poly = Polygon(geo_coords)
+            if not poly.is_valid or poly.is_empty:
+                return None
+            
+            return MultiPolygon([poly]) if isinstance(poly, Polygon) else poly
+        except Exception as e:
+            logger.warning(f"Failed to create polygon for contour: {e}")
+            return None
+
+    def _process_component_contours(self, class_id: int, component_mask, transform: Affine) -> list:
+        """Procesa contornos de un componente conectado."""
+        features = []
+        contours, _ = cv2.findContours(
+            component_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
+        
+        for contour in contours:
+            pixel_coords = self._extract_pixel_coordinates(contour)
+            if pixel_coords is None:
+                continue
+            
+            geo_coords = self._transform_to_geo_coords(pixel_coords, transform)
+            if geo_coords is None:
+                continue
+            
+            multi_poly = self._create_multipolygon(geo_coords)
+            if multi_poly is None:
+                continue
+            
+            area_pixels = np.sum(component_mask)
+            features.append((class_id, multi_poly, area_pixels))
+        
+        return features
+
+    def _process_class_components(self, class_id: int, class_mask, transform: Affine) -> list:
+        """Procesa todos los componentes conectados de una clase."""
+        if np.sum(class_mask) == 0:
+            return []
+        
+        features = []
+        num_labels, labels = cv2.connectedComponents(class_mask)
+        
+        for component_id in range(1, num_labels):
+            component_mask = (labels == component_id).astype(np.uint8)
+            component_features = self._process_component_contours(class_id, component_mask, transform)
+            features.extend(component_features)
+        
+        return features
+
     def _vectorize_mask(
-        self, mask: np.ndarray, transform: Affine, crs_epsg: int | None
+        self, mask: np.ndarray, transform: Affine
     ) -> List[Tuple[int, MultiPolygon, float]]:
         features_list = []
         num_classes = len(np.unique(mask))
-
+        
         for class_id in range(num_classes):
             class_mask = (mask == class_id).astype(np.uint8)
-            if np.sum(class_mask) == 0:
-                continue
-
-            num_labels, labels = cv2.connectedComponents(class_mask)
-            for component_id in range(1, num_labels):
-                component_mask = (labels == component_id).astype(np.uint8)
-                contours, _ = cv2.findContours(
-                    component_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-                )
-
-                for contour in contours:
-                    if len(contour) < 3:
-                        continue
-
-                    pixel_coords = contour.squeeze()
-                    if pixel_coords.ndim != 2 or pixel_coords.shape[1] != 2:
-                        continue
-
-                    geo_coords = []
-                    for col, row in pixel_coords:
-                        x, y = transform * (col, row)
-                        geo_coords.append((x, y))
-
-                    if len(geo_coords) < 3:
-                        continue
-
-                    try:
-                        poly = Polygon(geo_coords)
-                        if not poly.is_valid or poly.is_empty:
-                            continue
-
-                        multi_poly = (
-                            MultiPolygon([poly])
-                            if isinstance(poly, Polygon)
-                            else poly
-                        )
-                        area_pixels = np.sum(component_mask)
-                        features_list.append((class_id, multi_poly, area_pixels))
-                    except Exception as e:
-                        logger.warning(f"Failed to create polygon for contour: {e}")
-                        continue
-
+            class_features = self._process_class_components(class_id, class_mask, transform)
+            features_list.extend(class_features)
+        
         return features_list
 
     def _persist_segments(
@@ -430,7 +466,7 @@ class DLSegmentationService:
         catalog_cache = {}
         
         # Pre-crear todos los ClassCatalogs necesarios
-        class_ids_needed = set(class_id for class_id, _, _ in features_geo)
+        class_ids_needed = {class_id for class_id, _, _ in features_geo}
         
         for class_id in class_ids_needed:
             class_label = CLASS_MAPPING.get(class_id, f"unknown_{class_id}")
@@ -601,10 +637,8 @@ class DLSegmentationService:
         return segmentation_result
     def _save_mask_rgb(
         self,
-        db: Session,
         scene: Scene,
         mask_ids: np.ndarray,
-        original_image: np.ndarray,
         transform: Affine,
         crs: int | None,
     ) -> None:
@@ -612,10 +646,8 @@ class DLSegmentationService:
         Convierte la máscara de índices a RGB y la guarda como GeoTIFF.
         
         Args:
-            db: Sesión de base de datos
             scene: Escena a la que pertenece la máscara
             mask_ids: Máscara con índices de clase (H, W)
-            original_image: Imagen original para referencia
             transform: Transformación Affine para georeferenciación
             crs: EPSG code del CRS (puede ser None)
         """
@@ -625,7 +657,7 @@ class DLSegmentationService:
         # Si no hay CRS, asumir EPSG:32717 (Ecuador default)
         if crs is None:
             crs = 32717
-            logger.warning(f"[_save_mask_rgb] CRS None, usando default EPSG:32717")
+            logger.warning("[_save_mask_rgb] CRS None, usando default EPSG:32717")
         
         # Obtener colores del backend (mismos que en notebook)
         class_colors_rgb = {
@@ -661,7 +693,7 @@ class DLSegmentationService:
         for class_id, color_rgb in class_colors_rgb.items():
             mask = mask_ids == class_id
             mask_rgba[mask, :3] = color_rgb  # RGB
-            mask_rgba[mask, 3] = 255  # Alpha = opaco
+            mask_rgba[mask, 3] = 255  # Alpha completo
         
         # Los píxeles no clasificados (alpha=0) serán transparentes
         
@@ -706,7 +738,7 @@ class DLSegmentationService:
                 dst.write(mask_rgb[:, :, 1], 2)  # G
                 dst.write(mask_rgb[:, :, 2], 3)  # B
             
-            logger.info(f"[_save_mask_rgb] Máscara RGB guardada exitosamente")
+            logger.info("[_save_mask_rgb] Máscara RGB guardada exitosamente")
         except Exception as e:
             # Si falla incluso sin CRS, guardar sin información de proyección
             logger.warning(f"[_save_mask_rgb] Error al escribir con CRS, intentando sin CRS: {e}")
@@ -725,7 +757,7 @@ class DLSegmentationService:
                     dst.write(mask_rgb[:, :, 1], 2)  # G
                     dst.write(mask_rgb[:, :, 2], 3)  # B
                 
-                logger.info(f"[_save_mask_rgb] Máscara RGB guardada sin información de proyección")
+                logger.info("[_save_mask_rgb] Máscara RGB guardada sin información de proyección")
             except Exception as e2:
                 logger.error(f"[_save_mask_rgb] Error crítico al guardar máscara: {e2}")
                 raise
